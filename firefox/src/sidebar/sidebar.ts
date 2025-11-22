@@ -1,6 +1,6 @@
 import type { SavedPage, Annotation, Project } from '../lib/types';
 import { storage } from '../lib/storage';
-import { formatDate, getColorValue } from '../lib/utils';
+import { formatDate } from '../lib/utils';
 
 // DOM elements
 const settingsBtn = document.getElementById('settingsBtn') as HTMLButtonElement;
@@ -9,8 +9,9 @@ const pageActions = document.getElementById('pageActions') as HTMLDivElement;
 const savedInfo = document.getElementById('savedInfo') as HTMLDivElement;
 const savedDate = document.getElementById('savedDate') as HTMLParagraphElement;
 const savedProject = document.getElementById('savedProject') as HTMLParagraphElement;
+const savedIcon = document.getElementById('savedIcon') as HTMLSpanElement;
 const saveForm = document.getElementById('saveForm') as HTMLDivElement;
-const projectSelect = document.getElementById('projectSelect') as HTMLSelectElement;
+const projectDropdown = document.getElementById('projectDropdown') as HTMLSelectElement;
 const savePageBtn = document.getElementById('savePageBtn') as HTMLButtonElement;
 const annotationsList = document.getElementById('annotationsList') as HTMLDivElement;
 const refreshAnnotations = document.getElementById('refreshAnnotations') as HTMLButtonElement;
@@ -22,9 +23,45 @@ const newProjectForm = document.getElementById('newProjectForm') as HTMLFormElem
 const projectName = document.getElementById('projectName') as HTMLInputElement;
 const parentProject = document.getElementById('parentProject') as HTMLSelectElement;
 const cancelProject = document.getElementById('cancelProject') as HTMLButtonElement;
+const zoteroReaderOverlay = document.getElementById('zoteroReaderOverlay') as HTMLDivElement;
+const mainSidebar = document.getElementById('mainSidebar') as HTMLDivElement;
 
 let currentTab: browser.tabs.Tab | null = null;
 let currentPage: SavedPage | null = null;
+
+// Highlight icon SVG (from zotero-reader)
+const HIGHLIGHT_ICON = `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.7 13.4c-.1.1-.2.3-.2.5 0 .4.3.7.7.7.2 0 .4-.1.5-.2l5.8-5.8-1-1-5.8 5.8zM13 3.9l-.9-.9c-.4-.4-1-.4-1.4 0l-1.2 1.2 2.3 2.3 1.2-1.2c.4-.4.4-1 0-1.4zM4.5 7.7l2.3 2.3 4.6-4.6-2.3-2.3-4.6 4.6z"/></svg>`;
+
+/**
+ * Check if current URL is a Zotero Web Library reader page
+ * Pattern: zotero.org/{username}/items/{itemKey}/attachment/{attachmentKey}/reader
+ */
+function isZoteroReaderPage(url: string): boolean {
+  try {
+    const urlObj = new URL(url);
+    return (
+      urlObj.hostname === 'www.zotero.org' ||
+      urlObj.hostname === 'zotero.org'
+    ) && urlObj.pathname.includes('/reader');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Handle Zotero reader page detection
+ */
+function handleZoteroReaderPage(url: string) {
+  if (isZoteroReaderPage(url)) {
+    // Show overlay, hide main sidebar
+    zoteroReaderOverlay.style.display = 'flex';
+    mainSidebar.style.display = 'none';
+  } else {
+    // Show main sidebar, hide overlay
+    zoteroReaderOverlay.style.display = 'none';
+    mainSidebar.style.display = 'flex';
+  }
+}
 
 // Get current tab
 async function getCurrentTab(): Promise<browser.tabs.Tab | null> {
@@ -39,6 +76,9 @@ async function loadPageData() {
     pageStatus.innerHTML = '<p class="error">No active tab</p>';
     return;
   }
+
+  // Check if on Zotero reader page
+  handleZoteroReaderPage(currentTab.url);
 
   try {
     const response = await browser.runtime.sendMessage({
@@ -65,8 +105,10 @@ async function displayPageStatus() {
   pageActions.style.display = 'block';
 
   if (currentPage) {
+    // Show saved state
     savedInfo.style.display = 'block';
     saveForm.style.display = 'none';
+    savedIcon.style.display = 'inline';
     savedDate.textContent = `Added ${formatDate(currentPage.dateAdded)}`;
 
     // Display project name(s) the page was saved to
@@ -78,31 +120,42 @@ async function displayPageStatus() {
         .join(', ');
       savedProject.textContent = projectNames ? `in ${projectNames}` : '';
     } else {
-      savedProject.textContent = '';
+      savedProject.textContent = 'in My Library';
     }
   } else {
+    // Show save form
     savedInfo.style.display = 'none';
     saveForm.style.display = 'block';
-    loadProjectsForSelect();
+    savedIcon.style.display = 'none';
+    await loadProjectsForDropdown();
   }
 }
 
-// Load projects into select
-async function loadProjectsForSelect() {
+// Load projects into dropdown
+async function loadProjectsForDropdown() {
   const projects = await storage.getAllProjects();
   const projectsArray = Object.values(projects);
 
   if (projectsArray.length === 0) {
-    projectSelect.innerHTML = '<option value="">No projects (click sync)</option>';
+    projectDropdown.innerHTML = '<option value="">No projects (click sync)</option>';
     return;
   }
 
-  projectSelect.innerHTML = projectsArray
-    .map(
-      (p) =>
-        `<option value="${p.id}">${p.parentId ? '  ' : ''}${p.name}</option>`
-    )
-    .join('');
+  // Sort projects: top-level first, then by name
+  projectsArray.sort((a, b) => {
+    if (a.parentId && !b.parentId) return 1;
+    if (!a.parentId && b.parentId) return -1;
+    return a.name.localeCompare(b.name);
+  });
+
+  projectDropdown.innerHTML =
+    '<option value="">My Library (no project)</option>' +
+    projectsArray
+      .map(
+        (p) =>
+          `<option value="${p.id}">${p.parentId ? '\u00A0\u00A0' : ''}${escapeHtml(p.name)}</option>`
+      )
+      .join('');
 }
 
 // Save page
@@ -113,16 +166,15 @@ savePageBtn.addEventListener('click', async () => {
   savePageBtn.textContent = 'Saving...';
 
   try {
-    const selectedProjects = Array.from(projectSelect.selectedOptions).map(
-      (opt) => opt.value
-    );
+    const selectedProject = projectDropdown.value;
+    const collections = selectedProject ? [selectedProject] : [];
 
     const response = await browser.runtime.sendMessage({
       type: 'SAVE_PAGE',
       data: {
         url: currentTab.url,
         title: currentTab.title,
-        collections: selectedProjects,
+        collections,
       },
     });
 
@@ -140,7 +192,7 @@ savePageBtn.addEventListener('click', async () => {
   }
 });
 
-// Display annotations
+// Display annotations (zotero-reader style)
 function displayAnnotations(annotations: Annotation[]) {
   if (annotations.length === 0) {
     annotationsList.innerHTML =
@@ -150,18 +202,7 @@ function displayAnnotations(annotations: Annotation[]) {
 
   annotationsList.innerHTML = annotations
     .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
-    .map(
-      (ann) => `
-      <div class="annotation" data-id="${ann.id}" style="border-left: 4px solid ${getColorValue(ann.color)}">
-        <div class="annotation-text">"${escapeHtml(ann.text)}"</div>
-        ${ann.comment ? `<div class="annotation-comment">${escapeHtml(ann.comment)}</div>` : ''}
-        <div class="annotation-meta">
-          ${formatDate(ann.created)}
-          <button class="delete-annotation" data-id="${ann.id}">×</button>
-        </div>
-      </div>
-    `
-    )
+    .map((ann) => renderAnnotation(ann))
     .join('');
 
   // Add delete handlers
@@ -173,6 +214,33 @@ function displayAnnotations(annotations: Annotation[]) {
       }
     });
   });
+}
+
+// Render a single annotation in zotero-reader style
+function renderAnnotation(ann: Annotation): string {
+  const color = ann.color || 'yellow';
+
+  return `
+    <div class="annotation" data-id="${ann.id}" data-color="${color}">
+      <div class="annotation-header">
+        <div class="start">
+          <span class="annotation-icon">${HIGHLIGHT_ICON}</span>
+        </div>
+        <div class="end">
+          <button class="annotation-options" title="More options">&#8230;</button>
+        </div>
+      </div>
+      <div class="annotation-text">
+        <div class="blockquote-border"></div>
+        <div class="content">${escapeHtml(ann.text)}</div>
+      </div>
+      ${ann.comment ? `<div class="annotation-comment">${escapeHtml(ann.comment)}</div>` : ''}
+      <div class="annotation-meta">
+        <span>${formatDate(ann.created)}</span>
+        <button class="delete-annotation" data-id="${ann.id}" title="Delete">&#215;</button>
+      </div>
+    </div>
+  `;
 }
 
 // Delete annotation
@@ -219,7 +287,7 @@ async function loadProjects() {
     .map(
       (p) => `
       <div class="project" data-id="${p.id}">
-        <div class="project-name">${p.parentId ? '  ' : ''}${escapeHtml(p.name)}</div>
+        <div class="project-name">${p.parentId ? '\u00A0\u00A0' : ''}${escapeHtml(p.name)}</div>
         <div class="project-count">${p.itemCount}</div>
       </div>
     `
@@ -230,7 +298,7 @@ async function loadProjects() {
 // Sync projects
 syncProjects.addEventListener('click', async () => {
   syncProjects.disabled = true;
-  syncProjects.textContent = '⟳';
+  syncProjects.textContent = '\u21BB';
 
   try {
     const response = await browser.runtime.sendMessage({
@@ -239,7 +307,7 @@ syncProjects.addEventListener('click', async () => {
 
     if (response.success) {
       await loadProjects();
-      await loadProjectsForSelect();
+      await loadProjectsForDropdown();
     } else {
       alert(`Failed to sync projects: ${response.error}`);
     }
@@ -248,7 +316,7 @@ syncProjects.addEventListener('click', async () => {
     alert('Failed to sync projects');
   } finally {
     syncProjects.disabled = false;
-    syncProjects.textContent = '↻';
+    syncProjects.textContent = '\u21BB';
   }
 });
 

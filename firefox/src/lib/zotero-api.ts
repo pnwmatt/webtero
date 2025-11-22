@@ -261,6 +261,142 @@ class ZoteroAPI {
     }
   }
 
+  /**
+   * Create an attachment item for a snapshot
+   */
+  async createAttachmentItem(
+    parentItemKey: string,
+    url: string,
+    title: string
+  ): Promise<{ key: string; version: number }> {
+    const userID = await this.getUserID();
+    const headers = await this.getHeaders();
+
+    const data = {
+      itemType: 'attachment',
+      linkMode: 'imported_url',
+      title: title || 'Snapshot',
+      url,
+      accessDate: new Date().toISOString().split('T')[0],
+      parentItem: parentItemKey,
+      contentType: 'text/html',
+      charset: 'utf-8',
+      tags: [],
+    };
+
+    const response = await fetch(`${API_BASE}/users/${userID}/items`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify([data]),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to create attachment item: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    const item = result.successful['0'];
+    return { key: item.key, version: item.version };
+  }
+
+  /**
+   * Upload attachment file content
+   * This follows the Zotero Web API file upload protocol:
+   * 1. Request upload authorization
+   * 2. Upload to provided URL
+   * 3. Register the upload
+   */
+  async uploadAttachment(
+    attachmentKey: string,
+    data: Uint8Array,
+    filename: string,
+    md5: string
+  ): Promise<void> {
+    const userID = await this.getUserID();
+    const auth = await storage.getAuth();
+    if (!auth?.apiKey) {
+      throw new Error('No API key available');
+    }
+
+    // Step 1: Request upload authorization
+    const authParams = new URLSearchParams({
+      md5,
+      filename,
+      filesize: data.byteLength.toString(),
+      mtime: Date.now().toString(),
+      contentType: 'text/html',
+      charset: 'utf-8',
+    });
+
+    const authResponse = await fetch(
+      `${API_BASE}/users/${userID}/items/${attachmentKey}/file`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'If-None-Match': '*',
+          'Zotero-API-Key': auth.apiKey,
+          'Zotero-API-Version': API_VERSION,
+        },
+        body: authParams.toString(),
+      }
+    );
+
+    if (!authResponse.ok) {
+      throw new Error(`Failed to get upload authorization: ${authResponse.statusText}`);
+    }
+
+    const authResult = await authResponse.json();
+
+    // If file already exists, no need to upload
+    if (authResult.exists) {
+      console.log('Snapshot already exists on server');
+      return;
+    }
+
+    // Step 2: Upload file to the provided URL
+    // Combine prefix + data + suffix
+    const prefix = new TextEncoder().encode(authResult.prefix);
+    const suffix = new TextEncoder().encode(authResult.suffix);
+    const uploadData = new Uint8Array(prefix.length + data.length + suffix.length);
+    uploadData.set(prefix, 0);
+    uploadData.set(data, prefix.length);
+    uploadData.set(suffix, prefix.length + data.length);
+
+    const uploadResponse = await fetch(authResult.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': authResult.contentType,
+      },
+      body: uploadData,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Failed to upload file: ${uploadResponse.statusText}`);
+    }
+
+    // Step 3: Register the upload
+    const registerResponse = await fetch(
+      `${API_BASE}/users/${userID}/items/${attachmentKey}/file`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'If-None-Match': '*',
+          'Zotero-API-Key': auth.apiKey,
+          'Zotero-API-Version': API_VERSION,
+        },
+        body: `upload=${authResult.uploadKey}`,
+      }
+    );
+
+    if (!registerResponse.ok && registerResponse.status !== 204) {
+      throw new Error(`Failed to register upload: ${registerResponse.statusText}`);
+    }
+
+    console.log('Snapshot uploaded successfully');
+  }
+
   private escapeHtml(text: string): string {
     const div = document.createElement('div');
     div.textContent = text;

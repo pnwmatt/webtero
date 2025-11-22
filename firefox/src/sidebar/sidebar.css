@@ -1,9 +1,70 @@
+/**
+ * Webtero Sidebar Styles
+ *
+ * Annotation styles based on zotero-reader (see ZOTERO-READER-LICENSE)
+ * Source files referenced:
+ *   - zotero-reader/src/common/stylesheets/components/_preview.scss
+ *   - zotero-reader/src/common/stylesheets/components/_annotations-view.scss
+ *   - zotero-reader/src/common/defines.js
+ */
+
+/* CSS Custom Properties (from zotero-reader) */
+:root {
+  --fill-primary: #333;
+  --fill-secondary: #666;
+  --fill-tertiary: #999;
+  --fill-quinary: #e0e0e0;
+  --material-background: #fff;
+  --color-background: #fff;
+  --accent-blue10: #e3f2fd;
+  --accent-blue50: #2196f3;
+
+  /* Annotation colors from zotero-reader defines.js */
+  --annotation-yellow: #ffd400;
+  --annotation-red: #ff6666;
+  --annotation-green: #5fb236;
+  --annotation-blue: #2ea8e5;
+  --annotation-purple: #a28ae5;
+  --annotation-magenta: #e56eee;
+  --annotation-orange: #f19837;
+  --annotation-gray: #aaaaaa;
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 14px;
   line-height: 1.5;
-  color: #333;
+  color: var(--fill-primary);
+}
+
+/* Zotero Reader Overlay */
+.zotero-reader-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--material-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.zotero-reader-overlay .overlay-content {
+  text-align: center;
+  padding: 2rem;
+}
+
+.zotero-reader-overlay .overlay-content p {
+  margin: 0;
+  color: var(--fill-secondary);
+}
+
+.zotero-reader-overlay .overlay-content .meta {
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
 }
 
 .sidebar {
@@ -18,7 +79,7 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--fill-quinary);
   background: #f5f5f5;
 }
 
@@ -42,7 +103,7 @@ body {
 
 /* Collapsible sections using details/summary */
 .section {
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--fill-quinary);
 }
 
 .section h2 {
@@ -74,7 +135,7 @@ body {
   font-size: 1rem;
   font-weight: bold;
   transition: transform 0.2s ease;
-  color: #666;
+  color: var(--fill-secondary);
 }
 
 .section[open] > .section-header .chevron {
@@ -93,6 +154,15 @@ body {
   opacity: 0.7;
 }
 
+/* Saved icon (green checkmark) */
+.saved-icon {
+  color: #4caf50;
+  font-weight: bold;
+  font-size: 1rem;
+  margin-left: auto;
+  margin-right: 0.5rem;
+}
+
 /* Section content - scrollable and resizable */
 .section-content {
   padding: 0 1rem 1rem 1rem;
@@ -107,7 +177,7 @@ body {
 }
 
 .annotations .section-content {
-  max-height: 300px;
+  max-height: 400px;
 }
 
 .projects .section-content {
@@ -117,7 +187,7 @@ body {
 .page-status p,
 .empty {
   margin: 0;
-  color: #666;
+  color: var(--fill-secondary);
   font-size: 0.875rem;
 }
 
@@ -125,11 +195,9 @@ body {
   color: #c62828;
 }
 
+/* Saved info (simplified - no green background since we have icon) */
 .saved-info {
-  padding: 0.75rem;
-  background: #e8f5e9;
-  border-radius: 4px;
-  margin-bottom: 0.75rem;
+  padding: 0.5rem 0;
 }
 
 .saved-info p {
@@ -137,23 +205,41 @@ body {
 }
 
 .saved-info .meta {
-  font-size: 0.75rem;
-  color: #666;
-  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--fill-secondary);
 }
 
-.save-form select {
+/* Dropdown container */
+.dropdown-container {
+  margin-bottom: 0.75rem;
+}
+
+.dropdown-container label {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--fill-secondary);
+  margin-bottom: 0.25rem;
+}
+
+.project-dropdown {
   width: 100%;
   padding: 0.5rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--fill-quinary);
   border-radius: 4px;
-  margin-bottom: 0.75rem;
+  background: var(--material-background);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.project-dropdown:focus {
+  outline: none;
+  border-color: var(--accent-blue50);
 }
 
 .save-form button {
   width: 100%;
   padding: 0.75rem;
-  background: #2196f3;
+  background: var(--accent-blue50);
   color: white;
   border: none;
   border-radius: 4px;
@@ -171,43 +257,172 @@ body {
   cursor: not-allowed;
 }
 
-.annotations-list {
+/* ============================================
+   ANNOTATIONS VIEW (zotero-reader style)
+   ============================================ */
+
+.annotations-view {
+  width: 100%;
+  user-select: none;
+}
+
+.annotations {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 7px;
 }
 
+/* Individual annotation card (zotero-reader style) */
 .annotation {
-  padding: 0.75rem;
-  background: #f5f5f5;
-  border-radius: 4px;
-  border-left: 4px solid #ccc;
+  background: var(--material-background);
+  outline: 1px solid var(--fill-quinary);
+  border-radius: 5px;
+  overflow: hidden;
+  cursor: default;
 }
 
-.annotation-text {
-  font-style: italic;
-  margin-bottom: 0.5rem;
+.annotation:hover {
+  outline: 1px solid var(--fill-tertiary);
 }
 
-.annotation-comment {
-  margin-bottom: 0.5rem;
-  color: #555;
+.annotation.selected {
+  background: var(--accent-blue10);
+  outline: 3px solid var(--accent-blue50);
 }
 
-.annotation-meta {
+/* Annotation header (zotero-reader preview.scss style) */
+.annotation .annotation-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--fill-quinary);
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.annotation .annotation-header .start {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.annotation .annotation-header .end {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Annotation type icon with color */
+.annotation .annotation-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.annotation .annotation-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Page label */
+.annotation .annotation-page {
+  font-weight: 590;
   font-size: 0.75rem;
-  color: #666;
+  color: var(--fill-secondary);
+}
+
+/* Options button */
+.annotation .annotation-options {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--fill-tertiary);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.annotation .annotation-options:hover {
+  color: var(--fill-primary);
+}
+
+/* Annotation text section (zotero-reader style with blockquote border) */
+.annotation .annotation-text {
+  position: relative;
+  color: var(--fill-secondary);
+  padding: 8px 8px 8px 18px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.annotation .annotation-text .blockquote-border {
+  position: absolute;
+  left: 8px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+}
+
+.annotation .annotation-text .content {
+  word-break: break-word;
+}
+
+/* Annotation comment section */
+.annotation .annotation-comment {
+  padding: 8px;
+  border-top: 1px solid var(--fill-quinary);
+  font-size: 0.875rem;
+  color: var(--fill-primary);
+}
+
+/* Annotation tags section (zotero-reader style) */
+.annotation .annotation-tags {
+  padding: 3px 8px 5px;
+  line-height: 1.37;
+  word-break: break-word;
+  border-top: 1px solid var(--fill-quinary);
+}
+
+.annotation .annotation-tags .tag {
+  display: inline;
+  font-size: 0.75rem;
+}
+
+.annotation .annotation-tags .tag::after {
+  content: ", ";
+  color: var(--fill-primary);
+}
+
+.annotation .annotation-tags .tag:last-child::after {
+  content: none;
+}
+
+.annotation .annotation-tags .tag.colored {
+  font-weight: bold;
+}
+
+/* Annotation footer/meta */
+.annotation .annotation-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  border-top: 1px solid var(--fill-quinary);
+  font-size: 0.75rem;
+  color: var(--fill-tertiary);
 }
 
 .delete-annotation {
   background: none;
   border: none;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   cursor: pointer;
-  color: #999;
+  color: var(--fill-tertiary);
   padding: 0;
   line-height: 1;
 }
@@ -215,6 +430,32 @@ body {
 .delete-annotation:hover {
   color: #c62828;
 }
+
+/* Color-specific borders for annotations */
+.annotation[data-color="yellow"] .blockquote-border { background-color: var(--annotation-yellow); }
+.annotation[data-color="red"] .blockquote-border { background-color: var(--annotation-red); }
+.annotation[data-color="green"] .blockquote-border { background-color: var(--annotation-green); }
+.annotation[data-color="blue"] .blockquote-border { background-color: var(--annotation-blue); }
+.annotation[data-color="purple"] .blockquote-border { background-color: var(--annotation-purple); }
+.annotation[data-color="magenta"] .blockquote-border { background-color: var(--annotation-magenta); }
+.annotation[data-color="pink"] .blockquote-border { background-color: var(--annotation-magenta); }
+.annotation[data-color="orange"] .blockquote-border { background-color: var(--annotation-orange); }
+.annotation[data-color="gray"] .blockquote-border { background-color: var(--annotation-gray); }
+
+/* Icon colors */
+.annotation[data-color="yellow"] .annotation-icon { color: var(--annotation-yellow); }
+.annotation[data-color="red"] .annotation-icon { color: var(--annotation-red); }
+.annotation[data-color="green"] .annotation-icon { color: var(--annotation-green); }
+.annotation[data-color="blue"] .annotation-icon { color: var(--annotation-blue); }
+.annotation[data-color="purple"] .annotation-icon { color: var(--annotation-purple); }
+.annotation[data-color="magenta"] .annotation-icon { color: var(--annotation-magenta); }
+.annotation[data-color="pink"] .annotation-icon { color: var(--annotation-magenta); }
+.annotation[data-color="orange"] .annotation-icon { color: var(--annotation-orange); }
+.annotation[data-color="gray"] .annotation-icon { color: var(--annotation-gray); }
+
+/* ============================================
+   PROJECTS LIST
+   ============================================ */
 
 .projects-list {
   display: flex;
@@ -232,7 +473,7 @@ body {
 }
 
 .project:hover {
-  background: #e0e0e0;
+  background: var(--fill-quinary);
 }
 
 .project-name {
@@ -240,9 +481,13 @@ body {
 }
 
 .project-count {
-  color: #666;
+  color: var(--fill-secondary);
   font-size: 0.875rem;
 }
+
+/* ============================================
+   MODAL
+   ============================================ */
 
 .modal {
   position: fixed;
@@ -274,7 +519,7 @@ body {
 .modal-content select {
   width: 100%;
   padding: 0.5rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--fill-quinary);
   border-radius: 4px;
   margin-bottom: 0.75rem;
   font-size: 0.875rem;
@@ -296,7 +541,7 @@ body {
 }
 
 .modal-actions button[type="submit"] {
-  background: #2196f3;
+  background: var(--accent-blue50);
   color: white;
 }
 
@@ -306,9 +551,9 @@ body {
 
 .modal-actions button[type="button"] {
   background: #f5f5f5;
-  color: #333;
+  color: var(--fill-primary);
 }
 
 .modal-actions button[type="button"]:hover {
-  background: #e0e0e0;
+  background: var(--fill-quinary);
 }

@@ -8,16 +8,25 @@
   <link rel="stylesheet" href="sidebar.css">
 </head>
 <body>
-  <div class="sidebar">
+  <!-- Hidden overlay when on Zotero reader pages -->
+  <div id="zoteroReaderOverlay" class="zotero-reader-overlay" style="display: none;">
+    <div class="overlay-content">
+      <p>Zotero Reader detected</p>
+      <p class="meta">Using native Zotero sidebar</p>
+    </div>
+  </div>
+
+  <div id="mainSidebar" class="sidebar">
     <header class="header">
       <h1>Webtero</h1>
-      <button id="settingsBtn" title="Settings">⚙</button>
+      <button id="settingsBtn" title="Settings">&#9881;</button>
     </header>
 
     <details class="section current-page" open>
       <summary class="section-header">
-        <span class="chevron">›</span>
+        <span class="chevron">&#8250;</span>
         <h2>Current Page</h2>
+        <span id="savedIcon" class="saved-icon" style="display: none;" title="Saved to Zotero">&#10003;</span>
       </summary>
       <div class="section-content">
         <div id="pageStatus" class="page-status">
@@ -26,15 +35,17 @@
 
         <div id="pageActions" class="page-actions" style="display: none;">
           <div id="savedInfo" class="saved-info" style="display: none;">
-            <p>✓ Saved to Zotero</p>
             <p class="meta" id="savedProject"></p>
             <p class="meta" id="savedDate"></p>
           </div>
 
           <div id="saveForm" class="save-form" style="display: none;">
-            <select id="projectSelect" multiple size="5">
-              <option value="">Loading projects...</option>
-            </select>
+            <div class="dropdown-container">
+              <label for="projectDropdown">Save to project:</label>
+              <select id="projectDropdown" class="project-dropdown">
+                <option value="">Select a project...</option>
+              </select>
+            </div>
             <button id="savePageBtn">Save to Zotero</button>
           </div>
         </div>
@@ -43,22 +54,24 @@
 
     <details class="section annotations" open>
       <summary class="section-header">
-        <span class="chevron">›</span>
+        <span class="chevron">&#8250;</span>
         <h2>Annotations</h2>
-        <button id="refreshAnnotations" title="Refresh">↻</button>
+        <button id="refreshAnnotations" title="Refresh">&#8635;</button>
       </summary>
       <div class="section-content">
-        <div id="annotationsList" class="annotations-list">
-          <p class="empty">No annotations yet. Highlight text on the page to create one.</p>
+        <div id="annotationsView" class="annotations-view">
+          <div id="annotationsList" class="annotations">
+            <p class="empty">No annotations yet. Highlight text on the page to create one.</p>
+          </div>
         </div>
       </div>
     </details>
 
     <details class="section projects" open>
       <summary class="section-header">
-        <span class="chevron">›</span>
+        <span class="chevron">&#8250;</span>
         <h2>Projects</h2>
-        <button id="syncProjects" title="Sync from Zotero">↻</button>
+        <button id="syncProjects" title="Sync from Zotero">&#8635;</button>
         <button id="newProject" title="New Project">+</button>
       </summary>
       <div class="section-content">

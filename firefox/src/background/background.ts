@@ -1,7 +1,7 @@
 import type { Message, MessageResponse } from '../lib/types';
 import { storage } from '../lib/storage';
 import { zoteroAPI } from '../lib/zotero-api';
-import { generateId, normalizeUrl } from '../lib/utils';
+import { generateId, normalizeUrl, md5 } from '../lib/utils';
 
 console.log('Webtero background script loaded');
 
@@ -83,7 +83,7 @@ async function handleGetPageData(data: {
 }
 
 /**
- * Save a page to Zotero
+ * Save a page to Zotero with snapshot
  */
 async function handleSavePage(data: {
   url: string;
@@ -103,20 +103,70 @@ async function handleSavePage(data: {
   // Extract confirmed collections from API response
   const confirmedCollections = item.data.collections ?? [];
 
-  // Save to local storage
+  let snapshotSaved = false;
+
+  // Try to capture and upload snapshot
+  try {
+    // Get active tab to capture HTML
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    const activeTab = tabs[0];
+
+    if (activeTab?.id) {
+      // Request HTML capture from content script
+      const captureResponse = await browser.tabs.sendMessage(activeTab.id, {
+        type: 'CAPTURE_PAGE_HTML',
+      });
+
+      if (captureResponse?.success && captureResponse.data) {
+        const htmlContent = captureResponse.data as string;
+
+        // Convert HTML string to Uint8Array
+        const encoder = new TextEncoder();
+        const htmlData = encoder.encode(htmlContent);
+
+        // Calculate MD5 hash
+        const hash = md5(htmlData);
+
+        // Generate filename
+        const filename = `${data.title.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 50)}.html`;
+
+        // Create attachment item
+        const attachment = await zoteroAPI.createAttachmentItem(
+          item.key,
+          normalizedUrl,
+          'Snapshot'
+        );
+
+        // Upload the HTML content
+        await zoteroAPI.uploadAttachment(
+          attachment.key,
+          htmlData,
+          filename,
+          hash
+        );
+
+        snapshotSaved = true;
+        console.log('Snapshot saved successfully');
+      }
+    }
+  } catch (error) {
+    // Log error but don't fail the save operation
+    console.error('Failed to save snapshot:', error);
+  }
+
   await storage.savePage({
     url: normalizedUrl,
     zoteroItemKey: item.key,
     title: data.title,
     projects: confirmedCollections,
     dateAdded: new Date().toISOString(),
-    snapshot: false,
+    snapshot: snapshotSaved,
     version: item.version,
   });
 
   return {
     success: true,
-    data: { itemKey: item.key, projects: confirmedCollections },
+    data: { itemKey: item.key, projects: confirmedCollections, snapshot: snapshotSaved },
   };
 }
 

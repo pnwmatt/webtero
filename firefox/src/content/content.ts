@@ -450,3 +450,58 @@ if (document.readyState === 'loading') {
 } else {
   loadExistingHighlights();
 }
+
+/**
+ * Capture the current page HTML for snapshot
+ * This is a simplified version - a full implementation would use SingleFile
+ */
+function capturePageHTML(): string {
+  // Clone the document to avoid modifying the current page
+  const docClone = document.cloneNode(true) as Document;
+
+  // Remove webtero-specific elements from the clone
+  const webteroElements = docClone.querySelectorAll(
+    '#webtero-highlight-toolbar, #webtero-edit-toolbar, .webtero-highlight'
+  );
+  webteroElements.forEach((el) => {
+    // For highlights, unwrap them (keep text content)
+    if (el.classList.contains('webtero-highlight')) {
+      const parent = el.parentNode;
+      while (el.firstChild) {
+        parent?.insertBefore(el.firstChild, el);
+      }
+    }
+    el.remove();
+  });
+
+  // Add base tag for relative URLs
+  const baseTag = docClone.createElement('base');
+  baseTag.href = window.location.href;
+  docClone.head?.insertBefore(baseTag, docClone.head.firstChild);
+
+  // Add meta tag indicating this is a snapshot
+  const metaTag = docClone.createElement('meta');
+  metaTag.name = 'webtero-snapshot';
+  metaTag.content = new Date().toISOString();
+  docClone.head?.appendChild(metaTag);
+
+  // Return the full HTML
+  return '<!DOCTYPE html>\n' + docClone.documentElement.outerHTML;
+}
+
+// Listen for messages from background script
+browser.runtime.onMessage.addListener((message, sender) => {
+  if (message.type === 'CAPTURE_PAGE_HTML') {
+    try {
+      const html = capturePageHTML();
+      return Promise.resolve({ success: true, data: html });
+    } catch (error) {
+      console.error('Failed to capture page HTML:', error);
+      return Promise.resolve({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+  return undefined;
+});

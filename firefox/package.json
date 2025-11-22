@@ -9,7 +9,8 @@
     "watch": "node esbuild.config.js --watch",
     "clean": "rm -rf dist",
     "sync": "while inotifywait -r -e modify,create,delete,move dist; do rsync -avz --delete dist/ 192.168.50.225:~/Downloads/webtero-dist/; done",
-    "push": "rsync -avz --delete ./dist/ laptop1:~/Downloads/webtero-dist/"
+    "push": "rsync -avz --delete ./dist/ laptop1:~/Downloads/webtero-dist/",
+    "copy-zotero-styles": "node scripts/copy-zotero-styles.js"
   },
   "devDependencies": {
     "@types/firefox-webext-browser": "^120.0.4",
