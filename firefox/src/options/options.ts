@@ -75,6 +75,7 @@ clearBtn.addEventListener('click', async () => {
     try {
       await storage.clearAuth();
       apiKeyInput.value = '';
+      userIDInput.value = '';
       showStatus('Credentials cleared');
     } catch (error) {
       showStatus('Failed to clear credentials', true);

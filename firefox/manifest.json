@@ -6,8 +6,7 @@
   "permissions": [
     "storage",
     "activeTab",
-    "tabs",
-    "sidebarAction"
+    "tabs"
   ],
   "host_permissions": [
     "http://127.0.0.1:23119/*",
@@ -36,7 +35,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "webtero@anthropic.com",
+      "id": "webtero@pnwmatt.net",
       "strict_min_version": "115.0"
     }
   }

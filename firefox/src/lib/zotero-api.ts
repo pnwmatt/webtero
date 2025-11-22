@@ -19,7 +19,7 @@ class ZoteroAPI {
 
   private async getUserID(): Promise<string> {
     const auth = await storage.getAuth();
-    return auth?.userID ?? '12345'; // Placeholder userID
+    return auth?.userID ?? '13937999'; // Placeholder userID
   }
 
   /**
