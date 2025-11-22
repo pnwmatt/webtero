@@ -55,6 +55,9 @@ browser.runtime.onMessage.addListener(
             message.data as { itemKey: string }
           );
 
+        case 'INJECT_SINGLEFILE':
+          return await handleInjectSingleFile(sender);
+
         default:
           return { success: false, error: 'Unknown message type' };
       }
@@ -240,20 +243,37 @@ async function handleCreateAnnotation(data: {
     return { success: false, error: 'Page not saved to Zotero yet' };
   }
 
-  // Create annotation in Zotero
+  // Get the most recent snapshot to associate the annotation with
+  let snapshotKey: string | undefined;
+  try {
+    const snapshots = await zoteroAPI.getSnapshots(page.zoteroItemKey);
+    if (snapshots.length > 0) {
+      // Use the most recent snapshot
+      snapshotKey = snapshots[0].key;
+    }
+  } catch (error) {
+    console.error('Failed to fetch snapshots for annotation:', error);
+  }
+
+  if (!snapshotKey) {
+    return { success: false, error: 'No snapshot found. Please save a snapshot first.' };
+  }
+
+  // Create annotation in Zotero as a child of the snapshot
   const note = await zoteroAPI.createAnnotation(
-    page.zoteroItemKey,
+    snapshotKey,
     data.text,
     data.comment,
     data.color
   );
 
-  // Save annotation locally
+  // Save annotation locally with snapshot association
   const annotation = {
     id: generateId(),
     pageUrl: normalizedUrl,
     zoteroItemKey: page.zoteroItemKey,
     zoteroNoteKey: note.key,
+    snapshotKey,
     text: data.text,
     comment: data.comment,
     color: data.color as any,
@@ -378,6 +398,40 @@ async function handleDeleteAnnotation(data: {
   });
 
   return { success: true };
+}
+
+/**
+ * Inject SingleFile scripts into the content script context
+ */
+async function handleInjectSingleFile(
+  sender: browser.runtime.MessageSender
+): Promise<MessageResponse> {
+  const tabId = sender.tab?.id;
+  if (!tabId) {
+    return { success: false, error: 'No tab ID' };
+  }
+
+  try {
+    const scripts = [
+      'lib/singlefile/single-file-bootstrap.js',
+      'lib/singlefile/single-file.js',
+    ];
+
+    for (const file of scripts) {
+      await browser.scripting.executeScript({
+        target: { tabId },
+        files: [file],
+      });
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to inject SingleFile:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to inject SingleFile',
+    };
+  }
 }
 
 /**

@@ -532,7 +532,7 @@ let singleFileInjected = false;
 let singleFileHooksInjected = false;
 
 /**
- * Inject SingleFile hooks into the page
+ * Inject SingleFile hooks into the page context (for deferred image loading)
  */
 async function injectSingleFileHooks(): Promise<void> {
   if (singleFileHooksInjected) return;
@@ -553,33 +553,22 @@ async function injectSingleFileHooks(): Promise<void> {
 }
 
 /**
- * Inject SingleFile library into the page
+ * Inject SingleFile library into the content script context
+ * Uses browser.scripting.executeScript via background script
  */
 async function injectSingleFile(): Promise<void> {
   if (singleFileInjected) return;
 
-  // First inject hooks
+  // First inject hooks into the page context (for deferred image loading)
   await injectSingleFileHooks();
 
-  // Then inject the main SingleFile scripts
-  const scripts = [
-    'lib/singlefile/single-file-bootstrap.js',
-    'lib/singlefile/single-file.js',
-  ];
+  // Then inject the main SingleFile scripts into content script context via background
+  const response = await browser.runtime.sendMessage({
+    type: 'INJECT_SINGLEFILE',
+  });
 
-  for (const src of scripts) {
-    const scriptElement = document.createElement('script');
-    scriptElement.src = browser.runtime.getURL(src);
-    scriptElement.async = false;
-
-    await new Promise<void>((resolve, reject) => {
-      scriptElement.onload = () => resolve();
-      scriptElement.onerror = () => reject(new Error(`Failed to load ${src}`));
-      const insertElement = document.head || document.documentElement || document;
-      insertElement.appendChild(scriptElement);
-    });
-
-    scriptElement.remove();
+  if (!response.success) {
+    throw new Error(response.error || 'Failed to inject SingleFile');
   }
 
   singleFileInjected = true;
