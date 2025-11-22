@@ -317,3 +317,14 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
     loadPageData();
   }
 });
+
+// Listen for annotation changes from background script
+browser.runtime.onMessage.addListener((message) => {
+  if (
+    message.type === 'ANNOTATION_CREATED' ||
+    message.type === 'ANNOTATION_DELETED' ||
+    message.type === 'ANNOTATION_UPDATED'
+  ) {
+    loadPageData();
+  }
+});

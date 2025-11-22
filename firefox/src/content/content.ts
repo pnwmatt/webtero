@@ -4,11 +4,16 @@ import { getXPath, getNodeFromXPath, getColorValue } from '../lib/utils';
 console.log('Webtero content script loaded');
 
 let highlightToolbar: HTMLElement | null = null;
+let editToolbar: HTMLElement | null = null;
 let currentSelection: {
   text: string;
   range: Range;
   xpath: string;
   offset: number;
+} | null = null;
+let currentEditHighlight: {
+  id: string;
+  element: HTMLElement;
 } | null = null;
 
 /**
@@ -50,6 +55,178 @@ function createHighlightToolbar(): HTMLElement {
 
   document.body.appendChild(toolbar);
   return toolbar;
+}
+
+/**
+ * Create edit toolbar for existing highlights
+ */
+function createEditToolbar(): HTMLElement {
+  const toolbar = document.createElement('div');
+  toolbar.id = 'webtero-edit-toolbar';
+  toolbar.className = 'webtero-toolbar webtero-edit-toolbar';
+
+  const colors: HighlightColor[] = ['yellow', 'green', 'blue', 'pink', 'purple'];
+
+  toolbar.innerHTML = `
+    <div class="webtero-toolbar-content">
+      <div class="webtero-colors">
+        ${colors
+          .map(
+            (color) =>
+              `<button class="webtero-color-btn" data-color="${color}" style="background: ${getColorValue(color)}" title="Change to ${color}"></button>`
+          )
+          .join('')}
+      </div>
+      <button class="webtero-comment-btn" title="Edit comment">💬</button>
+      <button class="webtero-delete-btn" title="Delete highlight">🗑️</button>
+    </div>
+  `;
+
+  // Add event listeners for color change
+  toolbar.querySelectorAll('.webtero-color-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const color = (e.target as HTMLElement).dataset.color as HighlightColor;
+      updateHighlightColor(color);
+    });
+  });
+
+  // Edit comment
+  toolbar.querySelector('.webtero-comment-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    editHighlightComment();
+  });
+
+  // Delete highlight
+  toolbar.querySelector('.webtero-delete-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    deleteHighlight();
+  });
+
+  document.body.appendChild(toolbar);
+  return toolbar;
+}
+
+/**
+ * Show edit toolbar for an existing highlight
+ */
+function showEditToolbar(element: HTMLElement) {
+  if (!editToolbar) {
+    editToolbar = createEditToolbar();
+  }
+
+  const rect = element.getBoundingClientRect();
+  editToolbar.style.left = `${rect.left + rect.width / 2 + window.scrollX}px`;
+  editToolbar.style.top = `${rect.top + window.scrollY - 50}px`;
+  editToolbar.style.display = 'block';
+
+  // Mark current color as selected
+  const currentColor = element.dataset.color;
+  editToolbar.querySelectorAll('.webtero-color-btn').forEach((btn) => {
+    const btnEl = btn as HTMLElement;
+    if (btnEl.dataset.color === currentColor) {
+      btnEl.style.outline = '2px solid #333';
+    } else {
+      btnEl.style.outline = 'none';
+    }
+  });
+}
+
+/**
+ * Hide edit toolbar
+ */
+function hideEditToolbar() {
+  if (editToolbar) {
+    editToolbar.style.display = 'none';
+  }
+  currentEditHighlight = null;
+}
+
+/**
+ * Update highlight color
+ */
+async function updateHighlightColor(color: HighlightColor) {
+  if (!currentEditHighlight) return;
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'UPDATE_ANNOTATION',
+      data: {
+        id: currentEditHighlight.id,
+        color,
+      },
+    });
+
+    if (response.success) {
+      // Update visual
+      currentEditHighlight.element.style.backgroundColor = getColorValue(color);
+      currentEditHighlight.element.dataset.color = color;
+      hideEditToolbar();
+    } else {
+      alert(`Failed to update highlight: ${response.error}`);
+    }
+  } catch (error) {
+    console.error('Failed to update highlight:', error);
+  }
+}
+
+/**
+ * Edit highlight comment
+ */
+async function editHighlightComment() {
+  if (!currentEditHighlight) return;
+
+  const comment = prompt('Edit comment:');
+  if (comment === null) return; // Cancelled
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'UPDATE_ANNOTATION',
+      data: {
+        id: currentEditHighlight.id,
+        comment: comment || undefined,
+      },
+    });
+
+    if (response.success) {
+      hideEditToolbar();
+    } else {
+      alert(`Failed to update comment: ${response.error}`);
+    }
+  } catch (error) {
+    console.error('Failed to update comment:', error);
+  }
+}
+
+/**
+ * Delete highlight
+ */
+async function deleteHighlight() {
+  if (!currentEditHighlight) return;
+
+  if (!confirm('Delete this highlight?')) return;
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'DELETE_ANNOTATION',
+      data: { id: currentEditHighlight.id },
+    });
+
+    if (response.success) {
+      // Remove from DOM
+      const element = currentEditHighlight.element;
+      const parent = element.parentNode;
+      while (element.firstChild) {
+        parent?.insertBefore(element.firstChild, element);
+      }
+      element.remove();
+      hideEditToolbar();
+    } else {
+      alert(`Failed to delete highlight: ${response.error}`);
+    }
+  } catch (error) {
+    console.error('Failed to delete highlight:', error);
+  }
 }
 
 /**
@@ -233,17 +410,37 @@ document.addEventListener('selectionchange', () => {
   }
 });
 
-// Click outside to hide toolbar
+// Handle clicks on highlights to show edit toolbar
 document.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  const highlightElement = target.closest('.webtero-highlight') as HTMLElement;
+
+  // Check if clicking on a toolbar
   if (
-    highlightToolbar &&
-    !highlightToolbar.contains(e.target as Node) &&
-    !(e.target as HTMLElement).closest('.webtero-highlight')
+    (highlightToolbar && highlightToolbar.contains(target)) ||
+    (editToolbar && editToolbar.contains(target))
   ) {
-    const selection = window.getSelection();
-    if (selection?.isCollapsed) {
-      hideHighlightToolbar();
-    }
+    return;
+  }
+
+  // If clicking on a highlight, show edit toolbar
+  if (highlightElement && highlightElement.dataset.highlightId) {
+    e.preventDefault();
+    e.stopPropagation();
+    hideHighlightToolbar();
+    currentEditHighlight = {
+      id: highlightElement.dataset.highlightId,
+      element: highlightElement,
+    };
+    showEditToolbar(highlightElement);
+    return;
+  }
+
+  // Otherwise, hide toolbars if no text selected
+  const selection = window.getSelection();
+  if (selection?.isCollapsed) {
+    hideHighlightToolbar();
+    hideEditToolbar();
   }
 });
 

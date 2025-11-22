@@ -45,6 +45,11 @@ browser.runtime.onMessage.addListener(
         case 'DELETE_ANNOTATION':
           return await handleDeleteAnnotation(message.data as { id: string });
 
+        case 'UPDATE_ANNOTATION':
+          return await handleUpdateAnnotation(
+            message.data as { id: string; color?: string; comment?: string }
+          );
+
         default:
           return { success: false, error: 'Unknown message type' };
       }
@@ -153,6 +158,11 @@ async function handleCreateAnnotation(data: {
 
   await storage.saveAnnotation(annotation);
 
+  // Notify sidebar of the new annotation
+  browser.runtime.sendMessage({ type: 'ANNOTATION_CREATED', data: annotation }).catch(() => {
+    // Sidebar may not be open, ignore errors
+  });
+
   return {
     success: true,
     data: annotation,
@@ -203,6 +213,38 @@ async function handleSyncProjects(): Promise<MessageResponse> {
 }
 
 /**
+ * Update an annotation
+ */
+async function handleUpdateAnnotation(data: {
+  id: string;
+  color?: string;
+  comment?: string;
+}): Promise<MessageResponse> {
+  const annotation = await storage.getAnnotation(data.id);
+  if (!annotation) {
+    return { success: false, error: 'Annotation not found' };
+  }
+
+  // Update fields
+  if (data.color !== undefined) {
+    annotation.color = data.color as any;
+  }
+  if (data.comment !== undefined) {
+    annotation.comment = data.comment || undefined;
+  }
+
+  // Save updated annotation
+  await storage.saveAnnotation(annotation);
+
+  // Notify sidebar of the update
+  browser.runtime.sendMessage({ type: 'ANNOTATION_UPDATED', data: annotation }).catch(() => {
+    // Sidebar may not be open, ignore errors
+  });
+
+  return { success: true, data: annotation };
+}
+
+/**
  * Delete an annotation
  */
 async function handleDeleteAnnotation(data: {
@@ -224,6 +266,11 @@ async function handleDeleteAnnotation(data: {
 
   // Delete locally
   await storage.deleteAnnotation(data.id);
+
+  // Notify sidebar of the deletion
+  browser.runtime.sendMessage({ type: 'ANNOTATION_DELETED', data: { id: data.id } }).catch(() => {
+    // Sidebar may not be open, ignore errors
+  });
 
   return { success: true };
 }

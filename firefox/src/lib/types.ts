@@ -121,6 +121,7 @@ export type MessageType =
   | 'GET_PAGE_DATA'
   | 'SAVE_PAGE'
   | 'CREATE_ANNOTATION'
+  | 'UPDATE_ANNOTATION'
   | 'GET_ANNOTATIONS'
   | 'SYNC_PROJECTS'
   | 'HIGHLIGHT_TEXT'
