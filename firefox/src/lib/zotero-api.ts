@@ -98,6 +98,49 @@ class ZoteroAPI {
   }
 
   /**
+   * Get child items (attachments, notes) for a parent item
+   */
+  async getChildItems(parentItemKey: string): Promise<ZoteroItem[]> {
+    const userID = await this.getUserID();
+    const headers = await this.getHeaders();
+
+    const response = await fetch(
+      `${API_BASE}/users/${userID}/items/${parentItemKey}/children`,
+      { headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to get child items: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get snapshot attachments for an item
+   * Returns attachment items sorted by dateAdded (newest first)
+   */
+  async getSnapshots(parentItemKey: string): Promise<ZoteroItem[]> {
+    const children = await this.getChildItems(parentItemKey);
+
+    // Filter for HTML attachments (snapshots)
+    const snapshots = children.filter(
+      (item) =>
+        item.data.itemType === 'attachment' &&
+        item.data.contentType === 'text/html'
+    );
+
+    // Sort by dateAdded, newest first
+    snapshots.sort((a, b) => {
+      const dateA = new Date(a.data.dateAdded || 0).getTime();
+      const dateB = new Date(b.data.dateAdded || 0).getTime();
+      return dateB - dateA;
+    });
+
+    return snapshots;
+  }
+
+  /**
    * Create a webpage item
    * Example response:
    * {

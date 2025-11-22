@@ -1,4 +1,4 @@
-import type { SavedPage, Annotation, Project } from '../lib/types';
+import type { SavedPage, Annotation, Project, Snapshot } from '../lib/types';
 import { storage } from '../lib/storage';
 import { formatDate } from '../lib/utils';
 
@@ -25,9 +25,16 @@ const parentProject = document.getElementById('parentProject') as HTMLSelectElem
 const cancelProject = document.getElementById('cancelProject') as HTMLButtonElement;
 const zoteroReaderOverlay = document.getElementById('zoteroReaderOverlay') as HTMLDivElement;
 const mainSidebar = document.getElementById('mainSidebar') as HTMLDivElement;
+const versionsList = document.getElementById('versionsList') as HTMLDivElement;
+const showAllAnnotationsBtn = document.getElementById('showAllAnnotations') as HTMLButtonElement;
 
 let currentTab: browser.tabs.Tab | null = null;
 let currentPage: SavedPage | null = null;
+let currentSnapshots: Snapshot[] = [];
+let currentAnnotations: Annotation[] = [];
+let showingAllAnnotations = false;
+let pageLoadTime: Date = new Date();
+let liveVersionTimer: ReturnType<typeof setInterval> | null = null;
 
 // Highlight icon SVG (from zotero-reader)
 const HIGHLIGHT_ICON = `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.7 13.4c-.1.1-.2.3-.2.5 0 .4.3.7.7.7.2 0 .4-.1.5-.2l5.8-5.8-1-1-5.8 5.8zM13 3.9l-.9-.9c-.4-.4-1-.4-1.4 0l-1.2 1.2 2.3 2.3 1.2-1.2c.4-.4.4-1 0-1.4zM4.5 7.7l2.3 2.3 4.6-4.6-2.3-2.3-4.6 4.6z"/></svg>`;
@@ -88,8 +95,31 @@ async function loadPageData() {
 
     if (response.success) {
       currentPage = response.data.page;
+      currentSnapshots = response.data.snapshots || [];
+      currentAnnotations = response.data.annotations || [];
+      showingAllAnnotations = false;
       await displayPageStatus();
-      displayAnnotations(response.data.annotations);
+
+      // Query content script for which annotations couldn't be found
+      if (currentTab?.id && currentAnnotations.length > 0) {
+        try {
+          const notFoundResponse = await browser.tabs.sendMessage(currentTab.id, {
+            type: 'GET_NOT_FOUND_ANNOTATIONS',
+          });
+          if (notFoundResponse?.success && notFoundResponse.data?.notFoundIds) {
+            const notFoundIds = new Set(notFoundResponse.data.notFoundIds);
+            currentAnnotations = currentAnnotations.map((ann) => ({
+              ...ann,
+              notFound: notFoundIds.has(ann.id),
+            }));
+          }
+        } catch (error) {
+          // Content script may not be loaded yet, ignore
+          console.debug('Could not query not-found annotations:', error);
+        }
+      }
+
+      displayAnnotations(currentAnnotations);
     } else {
       pageStatus.innerHTML = `<p class="error">${response.error}</p>`;
     }
@@ -104,30 +134,137 @@ async function displayPageStatus() {
   pageStatus.style.display = 'none';
   pageActions.style.display = 'block';
 
-  if (currentPage) {
-    // Show saved state
-    savedInfo.style.display = 'block';
-    saveForm.style.display = 'none';
-    savedIcon.style.display = 'inline';
-    savedDate.textContent = `Added ${formatDate(currentPage.dateAdded)}`;
+  // Reset page load time when displaying status
+  pageLoadTime = new Date();
 
-    // Display project name(s) the page was saved to
-    if (currentPage.projects.length > 0) {
-      const projects = await storage.getAllProjects();
-      const projectNames = currentPage.projects
-        .map((id) => projects[id]?.name)
-        .filter(Boolean)
-        .join(', ');
-      savedProject.textContent = projectNames ? `in ${projectNames}` : '';
-    } else {
-      savedProject.textContent = 'in My Library';
-    }
+  // Always show save form for adding snapshots
+  saveForm.style.display = 'block';
+  await loadProjectsForDropdown();
+
+  if (currentPage) {
+    // Show saved state with versions
+    savedInfo.style.display = 'block';
+    savedIcon.style.display = 'inline';
+
+    // Hide the redundant date/project text
+    savedDate.style.display = 'none';
+    savedProject.style.display = 'none';
+
+    // Update button text for adding snapshots
+    savePageBtn.textContent = 'Save New Snapshot';
+
+    // Display versions list
+    displayVersionsList();
+    startLiveVersionTimer();
   } else {
-    // Show save form
+    // First time saving
     savedInfo.style.display = 'none';
-    saveForm.style.display = 'block';
     savedIcon.style.display = 'none';
-    await loadProjectsForDropdown();
+    savePageBtn.textContent = 'Save to Zotero';
+    stopLiveVersionTimer();
+  }
+}
+
+// Get relative time string from a date
+function getRelativeTime(date: Date): string {
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+
+  if (seconds < 10) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+
+  return date.toLocaleDateString();
+}
+
+// Start timer to update Live Version timestamp
+function startLiveVersionTimer() {
+  stopLiveVersionTimer();
+  liveVersionTimer = setInterval(() => {
+    const liveVersionDate = document.querySelector('.live-version .version-date');
+    if (liveVersionDate) {
+      liveVersionDate.textContent = getRelativeTime(pageLoadTime);
+    }
+  }, 10000); // Update every 10 seconds
+}
+
+// Stop the Live Version timer
+function stopLiveVersionTimer() {
+  if (liveVersionTimer) {
+    clearInterval(liveVersionTimer);
+    liveVersionTimer = null;
+  }
+}
+
+// Display versions list (Live + Snapshots)
+function displayVersionsList() {
+  if (!currentPage) return;
+
+  let html = `
+    <div class="version live-version active">
+      <span class="version-icon">&#9679;</span>
+      <span class="version-label">Live Version</span>
+      <span class="version-date">${getRelativeTime(pageLoadTime)}</span>
+    </div>
+  `;
+
+  // Add snapshots
+  if (currentSnapshots.length > 0) {
+    html += currentSnapshots
+      .map(
+        (snapshot) => `
+        <div class="version snapshot" data-key="${snapshot.key}" data-item-key="${currentPage?.zoteroItemKey}">
+          <span class="version-icon">&#128247;</span>
+          <span class="version-label">${escapeHtml(snapshot.title)}</span>
+          <span class="version-date">${formatDate(snapshot.dateAdded)}</span>
+        </div>
+      `
+      )
+      .join('');
+
+    // Show "Show all annotations" button if there are snapshots
+    showAllAnnotationsBtn.style.display = 'block';
+    showAllAnnotationsBtn.textContent = showingAllAnnotations
+      ? 'Show current annotations only'
+      : 'Show all annotations';
+  } else {
+    showAllAnnotationsBtn.style.display = 'none';
+  }
+
+  versionsList.innerHTML = html;
+
+  // Add click handlers for snapshots
+  versionsList.querySelectorAll('.snapshot').forEach((el) => {
+    el.addEventListener('click', () => {
+      const snapshotKey = (el as HTMLElement).dataset.key;
+      const itemKey = (el as HTMLElement).dataset.itemKey;
+      if (snapshotKey && itemKey) {
+        openSnapshotInReader(itemKey, snapshotKey);
+      }
+    });
+  });
+}
+
+// Open a snapshot in Zotero Web Library Reader
+async function openSnapshotInReader(itemKey: string, snapshotKey: string) {
+  try {
+    const auth = await storage.getAuth();
+    if (!auth?.userID) {
+      alert('Please configure your Zotero API key in settings');
+      return;
+    }
+
+    // Build Web Library reader URL
+    // Format: https://www.zotero.org/{username}/items/{itemKey}/attachment/{snapshotKey}/reader
+    const readerUrl = `https://www.zotero.org/users/${auth.userID}/items/${itemKey}/attachment/${snapshotKey}/reader`;
+    await browser.tabs.create({ url: readerUrl });
+  } catch (error) {
+    console.error('Failed to open snapshot in reader:', error);
+    alert('Failed to open snapshot');
   }
 }
 
@@ -188,7 +325,8 @@ savePageBtn.addEventListener('click', async () => {
     alert('Failed to save page');
   } finally {
     savePageBtn.disabled = false;
-    savePageBtn.textContent = 'Save to Zotero';
+    // Restore appropriate button text based on state
+    savePageBtn.textContent = currentPage ? 'Save New Snapshot' : 'Save to Zotero';
   }
 });
 
@@ -240,9 +378,14 @@ function displayAnnotations(annotations: Annotation[]) {
 // Render a single annotation in zotero-reader style
 function renderAnnotation(ann: Annotation): string {
   const color = ann.color || 'yellow';
+  const notFoundClass = ann.notFound ? 'not-found' : '';
+  const historicalClass = ann.snapshotKey ? 'historical' : '';
+  const notFoundWarning = ann.notFound
+    ? `<div class="annotation-warning">&#9888; Could not find this highlight on the current page</div>`
+    : '';
 
   return `
-    <div class="annotation" data-id="${ann.id}" data-color="${color}">
+    <div class="annotation ${notFoundClass} ${historicalClass}" data-id="${ann.id}" data-color="${color}">
       <div class="annotation-header">
         <div class="start">
           <span class="annotation-icon">${HIGHLIGHT_ICON}</span>
@@ -251,6 +394,7 @@ function renderAnnotation(ann: Annotation): string {
           <button class="annotation-options" title="More options">&#8230;</button>
         </div>
       </div>
+      ${notFoundWarning}
       <div class="annotation-text">
         <div class="blockquote-border"></div>
         <div class="content">${escapeHtml(ann.text)}</div>
@@ -258,7 +402,7 @@ function renderAnnotation(ann: Annotation): string {
       ${ann.comment ? `<div class="annotation-comment">${escapeHtml(ann.comment)}</div>` : ''}
       <div class="annotation-meta">
         <span>${formatDate(ann.created)}</span>
-        <button class="delete-annotation" data-id="${ann.id}" title="Delete">&#215;</button>
+        ${!ann.snapshotKey ? `<button class="delete-annotation" data-id="${ann.id}" title="Delete">&#215;</button>` : ''}
       </div>
     </div>
   `;
@@ -428,5 +572,59 @@ browser.runtime.onMessage.addListener((message) => {
     message.type === 'ANNOTATION_UPDATED'
   ) {
     loadPageData();
+  }
+});
+
+// Show all annotations button handler
+showAllAnnotationsBtn.addEventListener('click', async () => {
+  if (!currentTab?.id || !currentPage) return;
+
+  showingAllAnnotations = !showingAllAnnotations;
+
+  if (showingAllAnnotations) {
+    // Fetch all annotations from all snapshots
+    try {
+      const response = await browser.runtime.sendMessage({
+        type: 'GET_ALL_SNAPSHOT_ANNOTATIONS',
+        data: { itemKey: currentPage.zoteroItemKey },
+      });
+
+      if (response.success && Array.isArray(response.data)) {
+        const allAnnotations = response.data as Annotation[];
+
+        // Send to content script to apply highlighting and detect which ones can't be found
+        const applyResponse = await browser.tabs.sendMessage(currentTab.id, {
+          type: 'APPLY_HISTORICAL_ANNOTATIONS',
+          data: { annotations: allAnnotations },
+        });
+
+        if (applyResponse.success) {
+          // Update annotations with notFound status
+          const updatedAnnotations = allAnnotations.map((ann) => ({
+            ...ann,
+            notFound: applyResponse.data?.notFoundIds?.includes(ann.id) || false,
+          }));
+
+          // Display all annotations (current + historical)
+          displayAnnotations([...currentAnnotations, ...updatedAnnotations]);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load all annotations:', error);
+    }
+
+    showAllAnnotationsBtn.textContent = 'Show current annotations only';
+  } else {
+    // Remove historical highlights and show only current annotations
+    try {
+      await browser.tabs.sendMessage(currentTab.id, {
+        type: 'REMOVE_HISTORICAL_ANNOTATIONS',
+      });
+    } catch (error) {
+      console.error('Failed to remove historical annotations:', error);
+    }
+
+    displayAnnotations(currentAnnotations);
+    showAllAnnotationsBtn.textContent = 'Show all annotations';
   }
 });

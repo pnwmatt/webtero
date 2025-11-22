@@ -50,6 +50,11 @@ browser.runtime.onMessage.addListener(
             message.data as { id: string; color?: string; comment?: string }
           );
 
+        case 'GET_ALL_SNAPSHOT_ANNOTATIONS':
+          return await handleGetAllSnapshotAnnotations(
+            message.data as { itemKey: string }
+          );
+
         default:
           return { success: false, error: 'Unknown message type' };
       }
@@ -73,11 +78,34 @@ async function handleGetPageData(data: {
   const page = await storage.getPage(normalizedUrl);
   const annotations = await storage.getAnnotationsByPage(normalizedUrl);
 
+  // Fetch snapshots if page exists in Zotero
+  let snapshots: Array<{
+    key: string;
+    title: string;
+    dateAdded: string;
+    url: string;
+  }> = [];
+
+  if (page?.zoteroItemKey) {
+    try {
+      const zoteroSnapshots = await zoteroAPI.getSnapshots(page.zoteroItemKey);
+      snapshots = zoteroSnapshots.map((s) => ({
+        key: s.key,
+        title: s.data.title || 'Snapshot',
+        dateAdded: s.data.dateAdded || '',
+        url: s.data.url || normalizedUrl,
+      }));
+    } catch (error) {
+      console.error('Failed to fetch snapshots:', error);
+    }
+  }
+
   return {
     success: true,
     data: {
       page,
       annotations,
+      snapshots,
     },
   };
 }
@@ -146,12 +174,19 @@ async function handleSavePage(data: {
           .slice(0, 100); // Limit length
         const filename = `${sanitizedTitle}.html`;
 
-        // Create attachment item with "Snapshot" title (like Zotero)
+        // Determine attachment title
+        // If existing item has different title, use "Snapshot: <new title>"
+        let attachmentTitle = 'Snapshot';
+        if (isExistingItem && item.data.title !== data.title) {
+          attachmentTitle = `Snapshot: ${data.title}`;
+        }
+
+        // Create attachment item
         // This adds to the existing item or the newly created one
         const attachment = await zoteroAPI.createAttachmentItem(
           item.key,
           normalizedUrl,
-          'Snapshot'
+          attachmentTitle
         );
 
         // Upload the HTML content
@@ -343,4 +378,52 @@ async function handleDeleteAnnotation(data: {
   });
 
   return { success: true };
+}
+
+/**
+ * Get all annotations from all snapshots of an item
+ */
+async function handleGetAllSnapshotAnnotations(data: {
+  itemKey: string;
+}): Promise<MessageResponse> {
+  try {
+    // Get all snapshots for this item
+    const snapshots = await zoteroAPI.getSnapshots(data.itemKey);
+
+    // Get annotations for each snapshot
+    const allAnnotations: Array<{
+      id: string;
+      pageUrl: string;
+      zoteroItemKey: string;
+      zoteroNoteKey?: string;
+      snapshotKey: string;
+      text: string;
+      comment?: string;
+      color: string;
+      position: { xpath: string; offset: number; length: number };
+      created: string;
+    }> = [];
+
+    for (const snapshot of snapshots) {
+      // Get annotations stored for this snapshot
+      const snapshotAnnotations = await storage.getAnnotationsBySnapshot(snapshot.key);
+      for (const ann of snapshotAnnotations) {
+        allAnnotations.push({
+          ...ann,
+          snapshotKey: snapshot.key,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      data: allAnnotations,
+    };
+  } catch (error) {
+    console.error('Failed to get all snapshot annotations:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 }

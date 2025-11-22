@@ -4,6 +4,8 @@ import { getXPath, getNodeFromXPath, getColorValue } from '../lib/utils';
 console.log('Webtero content script loaded');
 
 let highlightToolbar: HTMLElement | null = null;
+// Track annotations that couldn't be found on the current page
+let notFoundAnnotationIds: Set<string> = new Set();
 let editToolbar: HTMLElement | null = null;
 let currentSelection: {
   text: string;
@@ -354,6 +356,9 @@ function applyVisualHighlight(range: Range, color: HighlightColor, id: string) {
  * Load and apply existing highlights
  */
 async function loadExistingHighlights() {
+  // Clear the not-found set before reloading
+  notFoundAnnotationIds.clear();
+
   try {
     const response = await browser.runtime.sendMessage({
       type: 'GET_ANNOTATIONS',
@@ -363,7 +368,10 @@ async function loadExistingHighlights() {
     if (response.success && Array.isArray(response.data)) {
       const annotations = response.data as Annotation[];
       annotations.forEach((ann) => {
-        applyStoredHighlight(ann);
+        const success = applyStoredHighlight(ann);
+        if (!success) {
+          notFoundAnnotationIds.add(ann.id);
+        }
       });
     }
   } catch (error) {
@@ -373,8 +381,9 @@ async function loadExistingHighlights() {
 
 /**
  * Apply a stored highlight from annotation data
+ * Returns true if successful, false if the text could not be found
  */
-function applyStoredHighlight(annotation: Annotation) {
+function applyStoredHighlight(annotation: Annotation): boolean {
   try {
     // Fix legacy XPath format: convert #text[n] to text()[n]
     let xpath = annotation.position.xpath;
@@ -385,7 +394,23 @@ function applyStoredHighlight(annotation: Annotation) {
     const node = getNodeFromXPath(xpath);
     if (!node || node.nodeType !== Node.TEXT_NODE) {
       console.warn('Could not find text node for highlight:', xpath);
-      return;
+      return false;
+    }
+
+    // Check if the text content still matches
+    const textContent = node.textContent || '';
+    const expectedText = annotation.text;
+    const actualText = textContent.substring(
+      annotation.position.offset,
+      annotation.position.offset + annotation.position.length
+    );
+
+    if (actualText !== expectedText) {
+      console.warn('Text mismatch for highlight:', {
+        expected: expectedText,
+        actual: actualText,
+      });
+      return false;
     }
 
     const range = document.createRange();
@@ -393,8 +418,10 @@ function applyStoredHighlight(annotation: Annotation) {
     range.setEnd(node, annotation.position.offset + annotation.position.length);
 
     applyVisualHighlight(range, annotation.color, annotation.id);
+    return true;
   } catch (error) {
     console.error('Failed to apply stored highlight:', error);
+    return false;
   }
 }
 
@@ -619,6 +646,109 @@ function capturePageHTMLBasic(): string {
   return '<!DOCTYPE html>\n' + docClone.documentElement.outerHTML;
 }
 
+/**
+ * Apply historical annotations from snapshots to the current page
+ * Returns the IDs of annotations that could not be found on the current page
+ */
+function applyHistoricalAnnotations(annotations: Annotation[]): { notFoundIds: string[] } {
+  const notFoundIds: string[] = [];
+
+  for (const annotation of annotations) {
+    // Skip if already applied (from current page annotations)
+    if (document.querySelector(`.webtero-highlight[data-highlight-id="${annotation.id}"]`)) {
+      continue;
+    }
+
+    const applied = applyStoredHighlightWithCheck(annotation);
+    if (!applied) {
+      notFoundIds.push(annotation.id);
+    }
+  }
+
+  return { notFoundIds };
+}
+
+/**
+ * Apply a stored highlight from annotation data
+ * Returns true if successful, false if the text could not be found
+ */
+function applyStoredHighlightWithCheck(annotation: Annotation): boolean {
+  try {
+    // Fix legacy XPath format: convert #text[n] to text()[n]
+    let xpath = annotation.position.xpath;
+    if (xpath.includes('#text[')) {
+      xpath = xpath.replace(/#text\[(\d+)\]/g, 'text()[$1]');
+    }
+
+    const node = getNodeFromXPath(xpath);
+    if (!node || node.nodeType !== Node.TEXT_NODE) {
+      console.warn('Could not find text node for historical highlight:', xpath);
+      return false;
+    }
+
+    // Check if the text content still matches
+    const textContent = node.textContent || '';
+    const expectedText = annotation.text;
+    const actualText = textContent.substring(
+      annotation.position.offset,
+      annotation.position.offset + annotation.position.length
+    );
+
+    // If the text doesn't match exactly, try to find it nearby
+    if (actualText !== expectedText) {
+      console.warn('Text mismatch for historical highlight:', {
+        expected: expectedText,
+        actual: actualText,
+      });
+      return false;
+    }
+
+    const range = document.createRange();
+    range.setStart(node, annotation.position.offset);
+    range.setEnd(node, annotation.position.offset + annotation.position.length);
+
+    // Apply visual highlight with historical marker
+    const span = document.createElement('span');
+    span.className = 'webtero-highlight webtero-historical-highlight';
+    span.dataset.highlightId = annotation.id;
+    span.dataset.color = annotation.color;
+    span.dataset.historical = 'true';
+    span.style.backgroundColor = getColorValue(annotation.color);
+    span.style.opacity = '0.3'; // Slightly dimmer for historical
+
+    try {
+      range.surroundContents(span);
+    } catch (error) {
+      console.warn('Could not apply historical highlight directly:', error);
+      const contents = range.extractContents();
+      span.appendChild(contents);
+      range.insertNode(span);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Failed to apply historical highlight:', error);
+    return false;
+  }
+}
+
+/**
+ * Remove all historical annotations from the page
+ */
+function removeHistoricalAnnotations() {
+  const historicalHighlights = document.querySelectorAll('.webtero-historical-highlight');
+  historicalHighlights.forEach((el) => {
+    const parent = el.parentNode;
+    while (el.firstChild) {
+      parent?.insertBefore(el.firstChild, el);
+    }
+    el.remove();
+  });
+
+  // Normalize text nodes that may have been split
+  document.body.normalize();
+}
+
 // Listen for messages from sidebar and background script
 browser.runtime.onMessage.addListener((message, sender) => {
   if (message.type === 'CAPTURE_PAGE_HTML') {
@@ -638,6 +768,24 @@ browser.runtime.onMessage.addListener((message, sender) => {
     const { id } = message.data;
     scrollToHighlight(id);
     return Promise.resolve({ success: true });
+  }
+
+  if (message.type === 'APPLY_HISTORICAL_ANNOTATIONS') {
+    const { annotations } = message.data;
+    const result = applyHistoricalAnnotations(annotations);
+    return Promise.resolve({ success: true, data: result });
+  }
+
+  if (message.type === 'REMOVE_HISTORICAL_ANNOTATIONS') {
+    removeHistoricalAnnotations();
+    return Promise.resolve({ success: true });
+  }
+
+  if (message.type === 'GET_NOT_FOUND_ANNOTATIONS') {
+    return Promise.resolve({
+      success: true,
+      data: { notFoundIds: Array.from(notFoundAnnotationIds) },
+    });
   }
 
   return undefined;

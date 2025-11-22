@@ -73,6 +73,12 @@ class Storage {
     return Object.values(annotations).filter((ann) => ann.pageUrl === url);
   }
 
+  async getAnnotationsBySnapshot(snapshotKey: string): Promise<Annotation[]> {
+    const annotations = await this.get('annotations');
+    if (!annotations) return [];
+    return Object.values(annotations).filter((ann) => ann.snapshotKey === snapshotKey);
+  }
+
   async getAllAnnotations(): Promise<Record<string, Annotation>> {
     return (await this.get('annotations')) ?? {};
   }

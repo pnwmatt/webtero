@@ -25,6 +25,7 @@ export interface Annotation {
   pageUrl: string;
   zoteroItemKey: string; // Parent item
   zoteroNoteKey?: string; // Note/annotation in Zotero
+  snapshotKey?: string; // Which snapshot this annotation belongs to
   text: string; // Highlighted text
   comment?: string; // User comment
   color: HighlightColor; // Highlight color
@@ -35,6 +36,14 @@ export interface Annotation {
     length: number;
   };
   created: string;
+  notFound?: boolean; // True if annotation couldn't be found on current page
+}
+
+export interface Snapshot {
+  key: string; // Attachment key in Zotero
+  title: string; // "Snapshot" or "Snapshot: <title>"
+  dateAdded: string;
+  url: string; // URL of the snapshot
 }
 
 export interface AuthData {
