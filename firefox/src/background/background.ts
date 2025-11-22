@@ -127,10 +127,16 @@ async function handleSavePage(data: {
         // Calculate MD5 hash
         const hash = md5(htmlData);
 
-        // Generate filename
-        const filename = `${data.title.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 50)}.html`;
+        // Generate filename (matching Zotero's naming convention)
+        // Sanitize title: replace invalid chars, limit length
+        const sanitizedTitle = data.title
+          .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') // Replace invalid filename chars
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim()
+          .slice(0, 100); // Limit length
+        const filename = `${sanitizedTitle}.html`;
 
-        // Create attachment item
+        // Create attachment item with "Snapshot" title (like Zotero)
         const attachment = await zoteroAPI.createAttachmentItem(
           item.key,
           normalizedUrl,
@@ -146,7 +152,7 @@ async function handleSavePage(data: {
         );
 
         snapshotSaved = true;
-        console.log('Snapshot saved successfully');
+        console.log('Snapshot saved successfully:', filename);
       }
     }
   } catch (error) {

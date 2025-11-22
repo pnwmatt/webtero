@@ -451,20 +451,157 @@ if (document.readyState === 'loading') {
   loadExistingHighlights();
 }
 
+// === SINGLEFILE INTEGRATION ===
+// SingleFile configuration (based on zotero-browser-extension)
+const SINGLEFILE_CONFIG = {
+  removeHiddenElements: true,
+  removeUnusedStyles: true,
+  removeUnusedFonts: true,
+  removeFrames: false,
+  removeImports: true,
+  removeScripts: true,
+  compressHTML: false,
+  compressCSS: false,
+  loadDeferredImages: true,
+  loadDeferredImagesMaxIdleTime: 1500,
+  loadDeferredImagesBlockCookies: false,
+  loadDeferredImagesBlockStorage: false,
+  loadDeferredImagesKeepZoomLevel: false,
+  filenameTemplate: '{page-title}',
+  infobarTemplate: '',
+  includeInfobar: false,
+  confirmInfobarContent: false,
+  autoClose: false,
+  confirmFilename: false,
+  filenameConflictAction: 'uniquify',
+  filenameMaxLength: 192,
+  filenameMaxLengthUnit: 'bytes',
+  filenameReplacedCharacters: ['~', '+', '\\\\', '?', '%', '*', ':', '|', '"', '<', '>', '\x00-\x1f', '\x7F'],
+  filenameReplacementCharacter: '_',
+  maxResourceSize: 10,
+  maxResourceSizeEnabled: false,
+  removeAlternativeFonts: true,
+  removeAlternativeMedias: true,
+  removeAlternativeImages: true,
+  groupDuplicateImages: true,
+  saveRawPage: false,
+  insertTextBody: false,
+  resolveFragmentIdentifierURLs: false,
+  insertEmbeddedImage: false,
+  preventAppendedData: false,
+  selfExtractingArchive: false,
+  extractDataFromPage: true,
+  insertCanonicalLink: true,
+  insertMetaNoIndex: false,
+  insertMetaCSP: true,
+  blockMixedContent: false,
+  saveOriginalURLs: false,
+  replaceEmptyTitle: false,
+  includeBOM: false,
+  createRootDirectory: false,
+};
+
+let singleFileInjected = false;
+let singleFileHooksInjected = false;
+
 /**
- * Capture the current page HTML for snapshot
- * This is a simplified version - a full implementation would use SingleFile
+ * Inject SingleFile hooks into the page
  */
-function capturePageHTML(): string {
-  // Clone the document to avoid modifying the current page
+async function injectSingleFileHooks(): Promise<void> {
+  if (singleFileHooksInjected) return;
+
+  const scriptElement = document.createElement('script');
+  scriptElement.src = browser.runtime.getURL('lib/singlefile/single-file-hooks-frames.js');
+  scriptElement.async = false;
+
+  await new Promise<void>((resolve, reject) => {
+    scriptElement.onload = () => resolve();
+    scriptElement.onerror = () => reject(new Error('Failed to load SingleFile hooks'));
+    const insertElement = document.head || document.documentElement || document;
+    insertElement.appendChild(scriptElement);
+  });
+
+  scriptElement.remove();
+  singleFileHooksInjected = true;
+}
+
+/**
+ * Inject SingleFile library into the page
+ */
+async function injectSingleFile(): Promise<void> {
+  if (singleFileInjected) return;
+
+  // First inject hooks
+  await injectSingleFileHooks();
+
+  // Then inject the main SingleFile scripts
+  const scripts = [
+    'lib/singlefile/single-file-bootstrap.js',
+    'lib/singlefile/single-file.js',
+  ];
+
+  for (const src of scripts) {
+    const scriptElement = document.createElement('script');
+    scriptElement.src = browser.runtime.getURL(src);
+    scriptElement.async = false;
+
+    await new Promise<void>((resolve, reject) => {
+      scriptElement.onload = () => resolve();
+      scriptElement.onerror = () => reject(new Error(`Failed to load ${src}`));
+      const insertElement = document.head || document.documentElement || document;
+      insertElement.appendChild(scriptElement);
+    });
+
+    scriptElement.remove();
+  }
+
+  singleFileInjected = true;
+}
+
+/**
+ * Capture the current page HTML using SingleFile
+ * Returns a complete HTML document with all CSS and images inlined
+ */
+async function capturePageHTML(): Promise<string> {
+  console.log('Webtero: Starting page capture with SingleFile...');
+
+  try {
+    // Inject SingleFile if not already done
+    await injectSingleFile();
+
+    // Wait a bit for SingleFile to initialize
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Check if singlefile is available
+    if (typeof (window as any).singlefile === 'undefined') {
+      throw new Error('SingleFile not available after injection');
+    }
+
+    console.log('Webtero: SingleFile injected, getting page data...');
+
+    // Get page data using SingleFile
+    const pageData = await (window as any).singlefile.getPageData(SINGLEFILE_CONFIG);
+
+    console.log('Webtero: Page capture complete');
+    return pageData.content;
+  } catch (error) {
+    console.error('Webtero: SingleFile capture failed, falling back to basic capture:', error);
+    // Fallback to basic capture if SingleFile fails
+    return capturePageHTMLBasic();
+  }
+}
+
+/**
+ * Basic page capture fallback (without CSS inlining)
+ */
+function capturePageHTMLBasic(): string {
   const docClone = document.cloneNode(true) as Document;
 
-  // Remove webtero-specific elements from the clone
+  // Remove webtero-specific elements
   const webteroElements = docClone.querySelectorAll(
     '#webtero-highlight-toolbar, #webtero-edit-toolbar, .webtero-highlight'
   );
   webteroElements.forEach((el) => {
-    // For highlights, unwrap them (keep text content)
     if (el.classList.contains('webtero-highlight')) {
       const parent = el.parentNode;
       while (el.firstChild) {
@@ -479,29 +616,71 @@ function capturePageHTML(): string {
   baseTag.href = window.location.href;
   docClone.head?.insertBefore(baseTag, docClone.head.firstChild);
 
-  // Add meta tag indicating this is a snapshot
-  const metaTag = docClone.createElement('meta');
-  metaTag.name = 'webtero-snapshot';
-  metaTag.content = new Date().toISOString();
-  docClone.head?.appendChild(metaTag);
-
-  // Return the full HTML
   return '<!DOCTYPE html>\n' + docClone.documentElement.outerHTML;
 }
 
-// Listen for messages from background script
+// Listen for messages from sidebar and background script
 browser.runtime.onMessage.addListener((message, sender) => {
   if (message.type === 'CAPTURE_PAGE_HTML') {
-    try {
-      const html = capturePageHTML();
-      return Promise.resolve({ success: true, data: html });
-    } catch (error) {
-      console.error('Failed to capture page HTML:', error);
-      return Promise.resolve({
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+    // Return a promise for async capture
+    return capturePageHTML()
+      .then((html) => ({ success: true, data: html }))
+      .catch((error) => {
+        console.error('Failed to capture page HTML:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
       });
-    }
   }
+
+  if (message.type === 'SCROLL_TO_HIGHLIGHT') {
+    const { id } = message.data;
+    scrollToHighlight(id);
+    return Promise.resolve({ success: true });
+  }
+
   return undefined;
 });
+
+/**
+ * Scroll to a highlight and briefly flash it
+ */
+function scrollToHighlight(id: string) {
+  const highlight = document.querySelector(
+    `.webtero-highlight[data-highlight-id="${id}"]`
+  ) as HTMLElement;
+
+  if (!highlight) {
+    console.warn('Highlight not found:', id);
+    return;
+  }
+
+  // Scroll into view
+  highlight.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+  });
+
+  // Flash the highlight to draw attention
+  const originalOpacity = highlight.style.opacity;
+  highlight.style.transition = 'opacity 0.15s ease-in-out';
+
+  // Flash sequence
+  const flash = () => {
+    highlight.style.opacity = '0.8';
+    setTimeout(() => {
+      highlight.style.opacity = '0.2';
+      setTimeout(() => {
+        highlight.style.opacity = '0.8';
+        setTimeout(() => {
+          highlight.style.opacity = originalOpacity || '0.4';
+          highlight.style.transition = '';
+        }, 150);
+      }, 150);
+    }, 150);
+  };
+
+  // Start flash after scroll completes
+  setTimeout(flash, 300);
+}

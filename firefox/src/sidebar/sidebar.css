@@ -278,7 +278,7 @@ body {
   outline: 1px solid var(--fill-quinary);
   border-radius: 5px;
   overflow: hidden;
-  cursor: default;
+  cursor: pointer;
 }
 
 .annotation:hover {

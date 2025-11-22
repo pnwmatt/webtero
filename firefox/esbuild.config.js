@@ -23,6 +23,10 @@ const staticFiles = [
   { from: 'src/sidebar/sidebar.html', to: 'dist/sidebar/sidebar.html' },
   { from: 'src/options/options.html', to: 'dist/options/options.html' },
   { from: 'node_modules/modern-normalize/modern-normalize.css', to: 'dist/styles/reset.css' },
+  // SingleFile files for snapshot capture
+  { from: 'src/lib/singlefile/single-file-hooks-frames.js', to: 'dist/lib/singlefile/single-file-hooks-frames.js' },
+  { from: 'src/lib/singlefile/single-file-bootstrap.js', to: 'dist/lib/singlefile/single-file-bootstrap.js' },
+  { from: 'src/lib/singlefile/single-file.js', to: 'dist/lib/singlefile/single-file.js' },
 ];
 
 staticFiles.forEach(({ from, to }) => {

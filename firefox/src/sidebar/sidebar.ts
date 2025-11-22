@@ -208,9 +208,30 @@ function displayAnnotations(annotations: Annotation[]) {
   // Add delete handlers
   document.querySelectorAll('.delete-annotation').forEach((btn) => {
     btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       const id = (e.target as HTMLElement).dataset.id;
       if (id && confirm('Delete this annotation?')) {
         await deleteAnnotation(id);
+      }
+    });
+  });
+
+  // Add click handlers to scroll to annotation
+  document.querySelectorAll('.annotation').forEach((card) => {
+    card.addEventListener('click', async (e) => {
+      // Don't trigger if clicking on buttons
+      if ((e.target as HTMLElement).closest('button')) return;
+
+      const id = (card as HTMLElement).dataset.id;
+      if (id && currentTab?.id) {
+        try {
+          await browser.tabs.sendMessage(currentTab.id, {
+            type: 'SCROLL_TO_HIGHLIGHT',
+            data: { id },
+          });
+        } catch (error) {
+          console.error('Failed to scroll to highlight:', error);
+        }
       }
     });
   });

@@ -33,6 +33,16 @@
     "page": "options/options.html",
     "open_in_tab": true
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "lib/singlefile/single-file-hooks-frames.js",
+        "lib/singlefile/single-file-bootstrap.js",
+        "lib/singlefile/single-file.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "webtero@pnwmatt.net",
