@@ -93,12 +93,22 @@ async function handleSavePage(data: {
   const normalizedUrl = normalizeUrl(data.url);
   const collections = data.collections;
 
-  // Create webpage item via Web API
-  const item = await zoteroAPI.createWebpageItem(
-    normalizedUrl,
-    data.title,
-    collections
-  );
+  // Check if an item already exists for this URL
+  let item = await zoteroAPI.findItemByUrl(normalizedUrl);
+  let isExistingItem = false;
+
+  if (item) {
+    console.log('Found existing item for URL:', item.key);
+    isExistingItem = true;
+  } else {
+    // Create new webpage item via Web API
+    item = await zoteroAPI.createWebpageItem(
+      normalizedUrl,
+      data.title,
+      collections
+    );
+    console.log('Created new item:', item.key);
+  }
 
   // Extract confirmed collections from API response
   const confirmedCollections = item.data.collections ?? [];
@@ -137,6 +147,7 @@ async function handleSavePage(data: {
         const filename = `${sanitizedTitle}.html`;
 
         // Create attachment item with "Snapshot" title (like Zotero)
+        // This adds to the existing item or the newly created one
         const attachment = await zoteroAPI.createAttachmentItem(
           item.key,
           normalizedUrl,
@@ -152,7 +163,7 @@ async function handleSavePage(data: {
         );
 
         snapshotSaved = true;
-        console.log('Snapshot saved successfully:', filename);
+        console.log('Snapshot saved successfully:', filename, isExistingItem ? '(added to existing item)' : '(new item)');
       }
     }
   } catch (error) {

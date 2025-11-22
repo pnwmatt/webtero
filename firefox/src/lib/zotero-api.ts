@@ -67,6 +67,37 @@ class ZoteroAPI {
   }
 
   /**
+   * Search for an existing item by URL
+   * Returns the first matching item or null if none found
+   */
+  async findItemByUrl(url: string): Promise<ZoteroItem | null> {
+    const userID = await this.getUserID();
+    const headers = await this.getHeaders();
+
+    // Use the Zotero API search with itemType=webpage and url field
+    const params = new URLSearchParams({
+      itemType: 'webpage',
+      qmode: 'everything',
+      q: url,
+    });
+
+    const response = await fetch(
+      `${API_BASE}/users/${userID}/items?${params.toString()}`,
+      { headers }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to search items: ${response.statusText}`);
+    }
+
+    const items: ZoteroItem[] = await response.json();
+
+    // Find exact URL match (search may return partial matches)
+    const exactMatch = items.find((item) => item.data.url === url);
+    return exactMatch || null;
+  }
+
+  /**
    * Create a webpage item
    * Example response:
    * {
