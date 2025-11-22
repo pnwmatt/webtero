@@ -529,46 +529,34 @@ const SINGLEFILE_CONFIG = {
 };
 
 let singleFileInjected = false;
-let singleFileHooksInjected = false;
 
 /**
- * Inject SingleFile hooks into the page context (for deferred image loading)
+ * Inject SingleFile scripts into the page context
+ * We inject into page context because that's where SingleFile needs to run
+ * and use custom events to communicate the result back
  */
-async function injectSingleFileHooks(): Promise<void> {
-  if (singleFileHooksInjected) return;
-
-  const scriptElement = document.createElement('script');
-  scriptElement.src = browser.runtime.getURL('lib/singlefile/single-file-hooks-frames.js');
-  scriptElement.async = false;
-
-  await new Promise<void>((resolve, reject) => {
-    scriptElement.onload = () => resolve();
-    scriptElement.onerror = () => reject(new Error('Failed to load SingleFile hooks'));
-    const insertElement = document.head || document.documentElement || document;
-    insertElement.appendChild(scriptElement);
-  });
-
-  scriptElement.remove();
-  singleFileHooksInjected = true;
-}
-
-/**
- * Inject SingleFile library into the content script context
- * Uses browser.scripting.executeScript via background script
- */
-async function injectSingleFile(): Promise<void> {
+async function injectSingleFileScripts(): Promise<void> {
   if (singleFileInjected) return;
 
-  // First inject hooks into the page context (for deferred image loading)
-  await injectSingleFileHooks();
+  const scripts = [
+    'lib/singlefile/single-file-hooks-frames.js',
+    'lib/singlefile/single-file-bootstrap.js',
+    'lib/singlefile/single-file.js',
+  ];
 
-  // Then inject the main SingleFile scripts into content script context via background
-  const response = await browser.runtime.sendMessage({
-    type: 'INJECT_SINGLEFILE',
-  });
+  for (const src of scripts) {
+    const scriptElement = document.createElement('script');
+    scriptElement.src = browser.runtime.getURL(src);
+    scriptElement.async = false;
 
-  if (!response.success) {
-    throw new Error(response.error || 'Failed to inject SingleFile');
+    await new Promise<void>((resolve, reject) => {
+      scriptElement.onload = () => resolve();
+      scriptElement.onerror = () => reject(new Error(`Failed to load ${src}`));
+      const insertElement = document.head || document.documentElement || document;
+      insertElement.appendChild(scriptElement);
+    });
+
+    scriptElement.remove();
   }
 
   singleFileInjected = true;
@@ -576,30 +564,63 @@ async function injectSingleFile(): Promise<void> {
 
 /**
  * Capture the current page HTML using SingleFile
- * Returns a complete HTML document with all CSS and images inlined
+ * SingleFile runs in the page context, so we use custom events to communicate
  */
 async function capturePageHTML(): Promise<string> {
   console.log('Webtero: Starting page capture with SingleFile...');
 
   try {
-    // Inject SingleFile if not already done
-    await injectSingleFile();
+    // Inject SingleFile scripts into page context
+    await injectSingleFileScripts();
 
-    // Wait a bit for SingleFile to initialize
+    // Wait for SingleFile to initialize
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    // Check if singlefile is available
-    if (typeof (window as any).singlefile === 'undefined') {
-      throw new Error('SingleFile not available after injection');
-    }
+    // Inject a capture script that runs in the page context and sends result via custom event
+    const captureResult = await new Promise<string>((resolve, reject) => {
+      const responseHandler = (event: CustomEvent) => {
+        document.removeEventListener('webtero-singlefile-result', responseHandler as EventListener);
+        if (event.detail.error) {
+          reject(new Error(event.detail.error));
+        } else {
+          resolve(event.detail.content);
+        }
+      };
 
-    console.log('Webtero: SingleFile injected, getting page data...');
+      document.addEventListener('webtero-singlefile-result', responseHandler as EventListener);
 
-    // Get page data using SingleFile
-    const pageData = await (window as any).singlefile.getPageData(SINGLEFILE_CONFIG);
+      // Inject script to run SingleFile capture in page context
+      const captureScript = document.createElement('script');
+      captureScript.textContent = `
+        (async function() {
+          try {
+            if (typeof singlefile === 'undefined') {
+              throw new Error('SingleFile not available');
+            }
+            const config = ${JSON.stringify(SINGLEFILE_CONFIG)};
+            const pageData = await singlefile.getPageData(config);
+            document.dispatchEvent(new CustomEvent('webtero-singlefile-result', {
+              detail: { content: pageData.content }
+            }));
+          } catch (error) {
+            document.dispatchEvent(new CustomEvent('webtero-singlefile-result', {
+              detail: { error: error.message }
+            }));
+          }
+        })();
+      `;
+      document.documentElement.appendChild(captureScript);
+      captureScript.remove();
+
+      // Timeout after 30 seconds
+      setTimeout(() => {
+        document.removeEventListener('webtero-singlefile-result', responseHandler as EventListener);
+        reject(new Error('SingleFile capture timed out'));
+      }, 30000);
+    });
 
     console.log('Webtero: Page capture complete');
-    return pageData.content;
+    return captureResult;
   } catch (error) {
     console.error('Webtero: SingleFile capture failed, falling back to basic capture:', error);
     // Fallback to basic capture if SingleFile fails

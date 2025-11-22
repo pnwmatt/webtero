@@ -18,8 +18,11 @@
 
   <div id="mainSidebar" class="sidebar">
     <header class="header">
-      <h1>Webtero</h1>
-      <button id="settingsBtn" title="Settings">&#9881;</button>
+      <select id="projectDropdown" class="header-dropdown">
+        <option value="">My Library</option>
+      </select>
+      <button id="savePageBtn" class="header-save-btn" title="Save to Zotero">Save</button>
+      <button id="settingsBtn" class="header-settings-btn" title="Settings">&#9881;</button>
     </header>
 
     <details class="section current-page" open>
@@ -48,16 +51,6 @@
                 Show all annotations
               </button>
             </div>
-          </div>
-
-          <div id="saveForm" class="save-form" style="display: none;">
-            <div class="dropdown-container">
-              <label for="projectDropdown">Save to project:</label>
-              <select id="projectDropdown" class="project-dropdown">
-                <option value="">Select a project...</option>
-              </select>
-            </div>
-            <button id="savePageBtn">Save to Zotero</button>
           </div>
         </div>
       </div>

@@ -125,14 +125,33 @@ async function handleSavePage(data: {
   const collections = data.collections;
 
   // Check if an item already exists for this URL
-  let item = await zoteroAPI.findItemByUrl(normalizedUrl);
+  let item: Awaited<ReturnType<typeof zoteroAPI.findItemByUrl>> = null;
   let isExistingItem = false;
 
-  if (item) {
-    console.log('Found existing item for URL:', item.key);
-    isExistingItem = true;
-  } else {
-    // Create new webpage item via Web API
+  // First check local storage for existing item key
+  const existingPage = await storage.getPage(normalizedUrl);
+  if (existingPage?.zoteroItemKey) {
+    try {
+      item = await zoteroAPI.getItem(existingPage.zoteroItemKey);
+      isExistingItem = true;
+      console.log('Found existing item from local storage:', item.key);
+    } catch (error) {
+      console.error('Failed to fetch existing item from storage:', error);
+      // Item may have been deleted from Zotero, fall through to search/create
+    }
+  }
+
+  // Fall back to API search if not found locally
+  if (!item) {
+    item = await zoteroAPI.findItemByUrl(normalizedUrl);
+    if (item) {
+      console.log('Found existing item from API search:', item.key);
+      isExistingItem = true;
+    }
+  }
+
+  // Create new item if none found
+  if (!item) {
     item = await zoteroAPI.createWebpageItem(
       normalizedUrl,
       data.title,
@@ -243,7 +262,7 @@ async function handleCreateAnnotation(data: {
     return { success: false, error: 'Page not saved to Zotero yet' };
   }
 
-  // Get the most recent snapshot to associate the annotation with
+  // Get the most recent snapshot to associate the annotation with locally
   let snapshotKey: string | undefined;
   try {
     const snapshots = await zoteroAPI.getSnapshots(page.zoteroItemKey);
@@ -259,21 +278,22 @@ async function handleCreateAnnotation(data: {
     return { success: false, error: 'No snapshot found. Please save a snapshot first.' };
   }
 
-  // Create annotation in Zotero as a child of the snapshot
+  // Create annotation in Zotero as a child of the parent webpage item
+  // (Zotero API doesn't allow notes as children of attachments)
   const note = await zoteroAPI.createAnnotation(
-    snapshotKey,
+    page.zoteroItemKey,
     data.text,
     data.comment,
     data.color
   );
 
-  // Save annotation locally with snapshot association
+  // Save annotation locally with snapshot association for tracking
   const annotation = {
     id: generateId(),
     pageUrl: normalizedUrl,
     zoteroItemKey: page.zoteroItemKey,
     zoteroNoteKey: note.key,
-    snapshotKey,
+    snapshotKey, // Associate with snapshot locally
     text: data.text,
     comment: data.comment,
     color: data.color as any,
@@ -321,9 +341,10 @@ async function handleSyncProjects(): Promise<MessageResponse> {
     projects[collection.key] = {
       id: collection.key,
       name: collection.data.name,
-      parentId: collection.data.parentCollection,
-      itemCount: 0, // TODO: Fetch actual count
+      parentId: collection.data.parentCollection || undefined,
+      itemCount: collection.meta?.numItems ?? 0,
       version: collection.version,
+      dateModified: collection.data.dateModified,
     };
   }
 

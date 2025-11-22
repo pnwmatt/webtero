@@ -8,6 +8,7 @@ export interface Project {
   parentId?: string; // Parent collection (for subcollections)
   itemCount: number; // Number of items
   version: number; // Zotero version for sync
+  dateModified?: string; // Last modified date for sorting
 }
 
 export interface SavedPage {
@@ -67,11 +68,16 @@ export interface ZoteroCollection {
     type: string;
     id: number;
   };
+  meta?: {
+    numCollections?: number;
+    numItems?: number;
+  };
   data: {
     key: string;
     version: number;
     name: string;
     parentCollection?: string;
+    dateModified?: string;
   };
 }
 

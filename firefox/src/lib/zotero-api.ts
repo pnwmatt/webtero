@@ -270,7 +270,20 @@ class ZoteroAPI {
     }
 
     const result = await response.json();
-    return result.successful['0'];
+    console.log('Create annotation response:', JSON.stringify(result, null, 2));
+
+    // Check for failures
+    if (result.failed && Object.keys(result.failed).length > 0) {
+      const failedItem = result.failed['0'];
+      throw new Error(`Failed to create annotation: ${failedItem?.message || 'Unknown error'}`);
+    }
+
+    const note = result.successful?.['0'];
+    if (!note) {
+      throw new Error('No note returned from API');
+    }
+
+    return note;
   }
 
   /**

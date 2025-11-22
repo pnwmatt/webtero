@@ -10,7 +10,6 @@ const savedInfo = document.getElementById('savedInfo') as HTMLDivElement;
 const savedDate = document.getElementById('savedDate') as HTMLParagraphElement;
 const savedProject = document.getElementById('savedProject') as HTMLParagraphElement;
 const savedIcon = document.getElementById('savedIcon') as HTMLSpanElement;
-const saveForm = document.getElementById('saveForm') as HTMLDivElement;
 const projectDropdown = document.getElementById('projectDropdown') as HTMLSelectElement;
 const savePageBtn = document.getElementById('savePageBtn') as HTMLButtonElement;
 const annotationsList = document.getElementById('annotationsList') as HTMLDivElement;
@@ -137,8 +136,7 @@ async function displayPageStatus() {
   // Reset page load time when displaying status
   pageLoadTime = new Date();
 
-  // Always show save form for adding snapshots
-  saveForm.style.display = 'block';
+  // Load projects into the header dropdown
   await loadProjectsForDropdown();
 
   if (currentPage) {
@@ -151,7 +149,7 @@ async function displayPageStatus() {
     savedProject.style.display = 'none';
 
     // Update button text for adding snapshots
-    savePageBtn.textContent = 'Save New Snapshot';
+    savePageBtn.textContent = 'Save';
 
     // Display versions list
     displayVersionsList();
@@ -160,7 +158,7 @@ async function displayPageStatus() {
     // First time saving
     savedInfo.style.display = 'none';
     savedIcon.style.display = 'none';
-    savePageBtn.textContent = 'Save to Zotero';
+    savePageBtn.textContent = 'Save';
     stopLiveVersionTimer();
   }
 }
@@ -268,6 +266,51 @@ async function openSnapshotInReader(itemKey: string, snapshotKey: string) {
   }
 }
 
+// Build hierarchical project list sorted by last modified descending
+function buildHierarchicalProjectList(projects: Project[]): Project[] {
+  // Separate top-level and child projects
+  const topLevel = projects.filter((p) => !p.parentId);
+  const children = projects.filter((p) => p.parentId);
+
+  // Sort top-level by dateModified descending
+  topLevel.sort((a, b) => {
+    const dateA = a.dateModified ? new Date(a.dateModified).getTime() : 0;
+    const dateB = b.dateModified ? new Date(b.dateModified).getTime() : 0;
+    return dateB - dateA;
+  });
+
+  // Group children by parent
+  const childrenByParent: Record<string, Project[]> = {};
+  for (const child of children) {
+    if (child.parentId) {
+      if (!childrenByParent[child.parentId]) {
+        childrenByParent[child.parentId] = [];
+      }
+      childrenByParent[child.parentId].push(child);
+    }
+  }
+
+  // Sort each group of children by dateModified descending
+  for (const parentId of Object.keys(childrenByParent)) {
+    childrenByParent[parentId].sort((a, b) => {
+      const dateA = a.dateModified ? new Date(a.dateModified).getTime() : 0;
+      const dateB = b.dateModified ? new Date(b.dateModified).getTime() : 0;
+      return dateB - dateA;
+    });
+  }
+
+  // Build final list: parent followed by its children
+  const result: Project[] = [];
+  for (const parent of topLevel) {
+    result.push(parent);
+    if (childrenByParent[parent.id]) {
+      result.push(...childrenByParent[parent.id]);
+    }
+  }
+
+  return result;
+}
+
 // Load projects into dropdown
 async function loadProjectsForDropdown() {
   const projects = await storage.getAllProjects();
@@ -278,16 +321,12 @@ async function loadProjectsForDropdown() {
     return;
   }
 
-  // Sort projects: top-level first, then by name
-  projectsArray.sort((a, b) => {
-    if (a.parentId && !b.parentId) return 1;
-    if (!a.parentId && b.parentId) return -1;
-    return a.name.localeCompare(b.name);
-  });
+  // Build hierarchical sorted list
+  const sortedProjects = buildHierarchicalProjectList(projectsArray);
 
   projectDropdown.innerHTML =
     '<option value="">My Library (no project)</option>' +
-    projectsArray
+  sortedProjects
       .map(
         (p) =>
           `<option value="${p.id}">${p.parentId ? '\u00A0\u00A0' : ''}${escapeHtml(p.name)}</option>`
@@ -326,7 +365,7 @@ savePageBtn.addEventListener('click', async () => {
   } finally {
     savePageBtn.disabled = false;
     // Restore appropriate button text based on state
-    savePageBtn.textContent = currentPage ? 'Save New Snapshot' : 'Save to Zotero';
+    savePageBtn.textContent = 'Save';
   }
 });
 
@@ -441,14 +480,10 @@ async function loadProjects() {
     return;
   }
 
-  // Sort by name, with top-level first
-  projectsArray.sort((a, b) => {
-    if (a.parentId && !b.parentId) return 1;
-    if (!a.parentId && b.parentId) return -1;
-    return a.name.localeCompare(b.name);
-  });
+  // Build hierarchical sorted list
+  const sortedProjects = buildHierarchicalProjectList(projectsArray);
 
-  projectsList.innerHTML = projectsArray
+  projectsList.innerHTML = sortedProjects
     .map(
       (p) => `
       <div class="project" data-id="${p.id}">
@@ -458,6 +493,16 @@ async function loadProjects() {
     `
     )
     .join('');
+
+  // Add click handlers to select project in dropdown
+  projectsList.querySelectorAll('.project').forEach((el) => {
+    el.addEventListener('click', () => {
+      const projectId = (el as HTMLElement).dataset.id;
+      if (projectId) {
+        projectDropdown.value = projectId;
+      }
+    });
+  });
 }
 
 // Sync projects
