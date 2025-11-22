@@ -14,50 +14,58 @@
       <button id="settingsBtn" title="Settings">⚙</button>
     </header>
 
-    <section class="current-page">
-      <h2>Current Page</h2>
-
-      <div id="pageStatus" class="page-status">
-        <p class="loading">Loading...</p>
-      </div>
-
-      <div id="pageActions" class="page-actions" style="display: none;">
-        <div id="savedInfo" class="saved-info" style="display: none;">
-          <p>✓ Saved to Zotero</p>
-          <p class="meta" id="savedDate"></p>
+    <details class="section current-page" open>
+      <summary class="section-header">
+        <span class="chevron">›</span>
+        <h2>Current Page</h2>
+      </summary>
+      <div class="section-content">
+        <div id="pageStatus" class="page-status">
+          <p class="loading">Loading...</p>
         </div>
 
-        <div id="saveForm" class="save-form" style="display: none;">
-          <select id="projectSelect" multiple size="5">
-            <option value="">Loading projects...</option>
-          </select>
-          <button id="savePageBtn">Save to Zotero</button>
+        <div id="pageActions" class="page-actions" style="display: none;">
+          <div id="savedInfo" class="saved-info" style="display: none;">
+            <p>✓ Saved to Zotero</p>
+            <p class="meta" id="savedDate"></p>
+          </div>
+
+          <div id="saveForm" class="save-form" style="display: none;">
+            <select id="projectSelect" multiple size="5">
+              <option value="">Loading projects...</option>
+            </select>
+            <button id="savePageBtn">Save to Zotero</button>
+          </div>
         </div>
       </div>
-    </section>
+    </details>
 
-    <section class="annotations">
-      <div class="section-header">
+    <details class="section annotations" open>
+      <summary class="section-header">
+        <span class="chevron">›</span>
         <h2>Annotations</h2>
         <button id="refreshAnnotations" title="Refresh">↻</button>
+      </summary>
+      <div class="section-content">
+        <div id="annotationsList" class="annotations-list">
+          <p class="empty">No annotations yet. Highlight text on the page to create one.</p>
+        </div>
       </div>
+    </details>
 
-      <div id="annotationsList" class="annotations-list">
-        <p class="empty">No annotations yet. Highlight text on the page to create one.</p>
-      </div>
-    </section>
-
-    <section class="projects">
-      <div class="section-header">
+    <details class="section projects" open>
+      <summary class="section-header">
+        <span class="chevron">›</span>
         <h2>Projects</h2>
         <button id="syncProjects" title="Sync from Zotero">↻</button>
         <button id="newProject" title="New Project">+</button>
+      </summary>
+      <div class="section-content">
+        <div id="projectsList" class="projects-list">
+          <p class="empty">No projects. Click sync to load from Zotero.</p>
+        </div>
       </div>
-
-      <div id="projectsList" class="projects-list">
-        <p class="empty">No projects. Click sync to load from Zotero.</p>
-      </div>
-    </section>
+    </details>
 
     <div id="newProjectModal" class="modal" style="display: none;">
       <div class="modal-content">

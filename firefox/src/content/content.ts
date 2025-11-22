@@ -199,9 +199,15 @@ async function loadExistingHighlights() {
  */
 function applyStoredHighlight(annotation: Annotation) {
   try {
-    const node = getNodeFromXPath(annotation.position.xpath);
+    // Fix legacy XPath format: convert #text[n] to text()[n]
+    let xpath = annotation.position.xpath;
+    if (xpath.includes('#text[')) {
+      xpath = xpath.replace(/#text\[(\d+)\]/g, 'text()[$1]');
+    }
+
+    const node = getNodeFromXPath(xpath);
     if (!node || node.nodeType !== Node.TEXT_NODE) {
-      console.warn('Could not find node for highlight:', annotation.position.xpath);
+      console.warn('Could not find text node for highlight:', xpath);
       return;
     }
 

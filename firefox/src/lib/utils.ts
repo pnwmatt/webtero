@@ -11,6 +11,7 @@ export function generateId(): string {
 
 /**
  * Get XPath for a DOM node
+ * For text nodes, returns path to parent element with text() index
  */
 export function getXPath(node: Node): string {
   if (node.nodeType === Node.DOCUMENT_NODE) {
@@ -22,8 +23,20 @@ export function getXPath(node: Node): string {
     return '';
   }
 
+  // For text nodes, get parent path and add text() selector
+  if (node.nodeType === Node.TEXT_NODE) {
+    const parentPath = getXPath(parent);
+    const textNodes = Array.from(parent.childNodes).filter(
+      (n) => n.nodeType === Node.TEXT_NODE
+    );
+    const textIndex = textNodes.indexOf(node as ChildNode) + 1;
+    return `${parentPath}/text()[${textIndex}]`;
+  }
+
   const parentPath = getXPath(parent);
-  const siblings = Array.from(parent.childNodes);
+  const siblings = Array.from(parent.childNodes).filter(
+    (n) => n.nodeType === Node.ELEMENT_NODE && n.nodeName === node.nodeName
+  );
   const index = siblings.indexOf(node as ChildNode) + 1;
 
   const nodeName = node.nodeName.toLowerCase();

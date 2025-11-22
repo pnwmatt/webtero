@@ -1,7 +1,6 @@
 import type { Message, MessageResponse } from '../lib/types';
 import { storage } from '../lib/storage';
 import { zoteroAPI } from '../lib/zotero-api';
-import { zoteroConnector } from '../lib/zotero-connector';
 import { generateId, normalizeUrl } from '../lib/utils';
 
 console.log('Webtero background script loaded');
@@ -87,22 +86,9 @@ async function handleSavePage(data: {
   collections?: string[];
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
+  const collections = data.collections;
 
-  // Check if Zotero connector is available
-  const connectorAvailable = await zoteroConnector.ping();
-  let collections = data.collections;
-
-  // Try to get active collection from connector if no collections specified
-  if (!collections || collections.length === 0) {
-    if (connectorAvailable) {
-      const activeCollection = await zoteroConnector.getActiveCollection();
-      if (activeCollection?.id) {
-        collections = [activeCollection.id];
-      }
-    }
-  }
-
-  // Create webpage item via API
+  // Create webpage item via Web API
   const item = await zoteroAPI.createWebpageItem(
     normalizedUrl,
     data.title,

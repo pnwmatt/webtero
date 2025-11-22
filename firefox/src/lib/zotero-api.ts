@@ -68,6 +68,66 @@ class ZoteroAPI {
 
   /**
    * Create a webpage item
+   * Example response:
+   * {
+    "successful": {
+        "0": {
+            "key": "3BPCPE3N",
+            "version": 350,
+            "library": {
+                "type": "user",
+                "id": redacted,
+                "name": "redacted",
+                "links": {
+                    "alternate": {
+                        "href": "https://www.zotero.org/mm86837161",
+                        "type": "text/html"
+                    }
+                }
+            },
+            "links": {
+                "self": {
+                    "href": "https://api.zotero.org/users/13937999/items/3BPCPE3N",
+                    "type": "application/json"
+                },
+                "alternate": {
+                    "href": "https://www.zotero.org/mm86837161/items/3BPCPE3N",
+                    "type": "text/html"
+                }
+            },
+            "meta": {
+                "numChildren": 0
+            },
+            "data": {
+                "key": "3BPCPE3N",
+                "version": 350,
+                "itemType": "webpage",
+                "title": "dev:web_api:v3:start [Zotero Documentation]",
+                "creators": [],
+                "abstractNote": "",
+                "websiteTitle": "",
+                "websiteType": "",
+                "date": "",
+                "shortTitle": "",
+                "url": "https://www.zotero.org/support/dev/web_api/v3/start",
+                "accessDate": "2025-11-22",
+                "language": "",
+                "rights": "",
+                "extra": "",
+                "tags": [],
+                "collections": [],
+                "relations": {},
+                "dateAdded": "2025-11-22T03:59:29Z",
+                "dateModified": "2025-11-22T03:59:29Z"
+            }
+        }
+    },
+    "success": {
+        "0": "3BPCPE3N"
+    },
+    "unchanged": {},
+    "failed": {}
+}
    */
   async createWebpageItem(
     url: string,
@@ -81,7 +141,7 @@ class ZoteroAPI {
       itemType: 'webpage',
       title,
       url,
-      accessDate: new Date().toISOString(),
+      accessDate: new Date().toISOString().split('T')[0],
       ...(collections && collections.length > 0 && { collections }),
     };
 

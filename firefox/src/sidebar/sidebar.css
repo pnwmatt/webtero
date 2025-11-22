@@ -40,27 +40,45 @@ body {
   opacity: 0.7;
 }
 
-section {
+/* Collapsible sections using details/summary */
+.section {
   border-bottom: 1px solid #ddd;
-  padding: 1rem;
 }
 
-section h2 {
+.section h2 {
   font-size: 1rem;
   font-weight: 600;
-  margin: 0 0 0.75rem 0;
+  margin: 0;
 }
 
 .section-header {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.section-header::-webkit-details-marker {
+  display: none;
 }
 
 .section-header h2 {
   flex: 1;
   margin: 0;
+}
+
+.section-header .chevron {
+  font-size: 1rem;
+  font-weight: bold;
+  transition: transform 0.2s ease;
+  color: #666;
+}
+
+.section[open] > .section-header .chevron {
+  transform: rotate(90deg);
 }
 
 .section-header button {
@@ -73,6 +91,27 @@ section h2 {
 
 .section-header button:hover {
   opacity: 0.7;
+}
+
+/* Section content - scrollable and resizable */
+.section-content {
+  padding: 0 1rem 1rem 1rem;
+  overflow-y: auto;
+  resize: vertical;
+  min-height: 50px;
+}
+
+/* Default heights for different sections */
+.current-page .section-content {
+  max-height: 200px;
+}
+
+.annotations .section-content {
+  max-height: 300px;
+}
+
+.projects .section-content {
+  max-height: 200px;
 }
 
 .page-status p,
@@ -130,11 +169,6 @@ section h2 {
 .save-form button:disabled {
   background: #bbb;
   cursor: not-allowed;
-}
-
-.annotations {
-  flex: 1;
-  overflow-y: auto;
 }
 
 .annotations-list {
