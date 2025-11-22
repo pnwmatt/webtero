@@ -8,6 +8,7 @@ const pageStatus = document.getElementById('pageStatus') as HTMLDivElement;
 const pageActions = document.getElementById('pageActions') as HTMLDivElement;
 const savedInfo = document.getElementById('savedInfo') as HTMLDivElement;
 const savedDate = document.getElementById('savedDate') as HTMLParagraphElement;
+const savedProject = document.getElementById('savedProject') as HTMLParagraphElement;
 const saveForm = document.getElementById('saveForm') as HTMLDivElement;
 const projectSelect = document.getElementById('projectSelect') as HTMLSelectElement;
 const savePageBtn = document.getElementById('savePageBtn') as HTMLButtonElement;
@@ -47,7 +48,7 @@ async function loadPageData() {
 
     if (response.success) {
       currentPage = response.data.page;
-      displayPageStatus();
+      await displayPageStatus();
       displayAnnotations(response.data.annotations);
     } else {
       pageStatus.innerHTML = `<p class="error">${response.error}</p>`;
@@ -59,7 +60,7 @@ async function loadPageData() {
 }
 
 // Display page status
-function displayPageStatus() {
+async function displayPageStatus() {
   pageStatus.style.display = 'none';
   pageActions.style.display = 'block';
 
@@ -67,6 +68,18 @@ function displayPageStatus() {
     savedInfo.style.display = 'block';
     saveForm.style.display = 'none';
     savedDate.textContent = `Added ${formatDate(currentPage.dateAdded)}`;
+
+    // Display project name(s) the page was saved to
+    if (currentPage.projects.length > 0) {
+      const projects = await storage.getAllProjects();
+      const projectNames = currentPage.projects
+        .map((id) => projects[id]?.name)
+        .filter(Boolean)
+        .join(', ');
+      savedProject.textContent = projectNames ? `in ${projectNames}` : '';
+    } else {
+      savedProject.textContent = '';
+    }
   } else {
     savedInfo.style.display = 'none';
     saveForm.style.display = 'block';

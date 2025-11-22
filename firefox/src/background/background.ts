@@ -100,12 +100,15 @@ async function handleSavePage(data: {
     collections
   );
 
+  // Extract confirmed collections from API response
+  const confirmedCollections = item.data.collections ?? [];
+
   // Save to local storage
   await storage.savePage({
     url: normalizedUrl,
     zoteroItemKey: item.key,
     title: data.title,
-    projects: collections ?? [],
+    projects: confirmedCollections,
     dateAdded: new Date().toISOString(),
     snapshot: false,
     version: item.version,
@@ -113,7 +116,7 @@ async function handleSavePage(data: {
 
   return {
     success: true,
-    data: { itemKey: item.key },
+    data: { itemKey: item.key, projects: confirmedCollections },
   };
 }
 
