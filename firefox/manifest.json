@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Webtero",
+  "version": "0.1.0",
+  "description": "Transform web research from scattered bookmarks into structured knowledge projects",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs",
+    "sidebarAction"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:23119/*",
+    "https://api.zotero.org/*"
+  ],
+  "background": {
+    "scripts": ["background/background.js"],
+    "type": "module"
+  },
+  "sidebar_action": {
+    "default_panel": "sidebar/sidebar.html",
+    "default_title": "Webtero",
+    "open_at_install": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "webtero@anthropic.com",
+      "strict_min_version": "115.0"
+    }
+  }
+}

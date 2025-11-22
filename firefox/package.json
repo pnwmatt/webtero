@@ -1,0 +1,19 @@
+{
+  "name": "webtero",
+  "version": "0.1.0",
+  "description": "Transform web research from scattered bookmarks into structured knowledge projects",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.js",
+    "watch": "node esbuild.config.js --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/firefox-webext-browser": "^120.0.4",
+    "esbuild": "^0.20.0",
+    "modern-normalize": "^2.0.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {}
+}

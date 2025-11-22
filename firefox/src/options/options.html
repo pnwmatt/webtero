@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Webtero Settings</title>
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Webtero Settings</h1>
+      <p>Configure your Zotero API credentials</p>
+    </header>
+
+    <main>
+      <section class="auth-section">
+        <h2>Zotero Authentication</h2>
+
+        <div class="status" id="status"></div>
+
+        <form id="authForm">
+          <div class="form-group">
+            <label for="apiKey">API Key:</label>
+            <input
+              type="text"
+              id="apiKey"
+              name="apiKey"
+              placeholder="Enter your Zotero API key"
+            >
+            <small>
+              Get your API key from
+              <a href="https://www.zotero.org/settings/keys" target="_blank">
+                zotero.org/settings/keys
+              </a>
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label for="userID">User ID:</label>
+            <input
+              type="text"
+              id="userID"
+              name="userID"
+              value="12345"
+              placeholder="Placeholder: 12345"
+              disabled
+            >
+            <small>Using placeholder user ID for MVP</small>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" id="saveBtn">Save Credentials</button>
+            <button type="button" id="clearBtn">Clear Credentials</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="connector-section">
+        <h2>Zotero Connector Status</h2>
+        <div id="connectorStatus" class="connector-status">
+          <p>Checking...</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="options.js" type="module"></script>
+</body>
+</html>
