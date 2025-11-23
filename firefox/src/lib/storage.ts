@@ -4,6 +4,9 @@ import type {
   SavedPage,
   Annotation,
   Project,
+  PageFocusSession,
+  PageLink,
+  AutoSaveTab,
 } from './types';
 
 /**
@@ -132,6 +135,139 @@ class Storage {
 
   async setLastSync(timestamp: string): Promise<void> {
     await this.set('lastSync', timestamp);
+  }
+
+  // Page Focus Session operations
+  async getFocusSession(id: string): Promise<PageFocusSession | undefined> {
+    const sessions = await this.get('pageFocusSessions');
+    return sessions?.[id];
+  }
+
+  async getFocusSessionsByItem(itemKey: string): Promise<PageFocusSession[]> {
+    const sessions = await this.get('pageFocusSessions');
+    if (!sessions) return [];
+    return Object.values(sessions).filter((s) => s.itemKey === itemKey);
+  }
+
+  async getActiveFocusSession(tabId: number): Promise<PageFocusSession | undefined> {
+    const sessions = await this.get('pageFocusSessions');
+    if (!sessions) return undefined;
+    return Object.values(sessions).find((s) => s.tabId === tabId && !s.endTime);
+  }
+
+  async saveFocusSession(session: PageFocusSession): Promise<void> {
+    const sessions = (await this.get('pageFocusSessions')) ?? {};
+    sessions[session.id] = session;
+    await this.set('pageFocusSessions', sessions);
+  }
+
+  async deleteFocusSession(id: string): Promise<void> {
+    const sessions = await this.get('pageFocusSessions');
+    if (sessions && sessions[id]) {
+      delete sessions[id];
+      await this.set('pageFocusSessions', sessions);
+    }
+  }
+
+  /**
+   * Calculate total read percentage for an item by merging all session ranges
+   */
+  async getReadPercentage(itemKey: string): Promise<number> {
+    const sessions = await this.getFocusSessionsByItem(itemKey);
+    if (sessions.length === 0) return 0;
+
+    // Collect all ranges
+    const allRanges: Array<{ start: number; end: number }> = [];
+    for (const session of sessions) {
+      allRanges.push(...session.readRanges);
+    }
+
+    if (allRanges.length === 0) return 0;
+
+    // Merge overlapping ranges
+    allRanges.sort((a, b) => a.start - b.start);
+    const merged: Array<{ start: number; end: number }> = [allRanges[0]];
+
+    for (let i = 1; i < allRanges.length; i++) {
+      const current = allRanges[i];
+      const last = merged[merged.length - 1];
+
+      if (current.start <= last.end) {
+        // Overlapping, extend the last range
+        last.end = Math.max(last.end, current.end);
+      } else {
+        // Non-overlapping, add new range
+        merged.push(current);
+      }
+    }
+
+    // Calculate total percentage covered
+    const totalCovered = merged.reduce((sum, r) => sum + (r.end - r.start), 0);
+    const percentage = Math.min(100, Math.round(totalCovered));
+
+    console.log(`Webtero: Read percentage for ${itemKey}: ${percentage}% (${sessions.length} sessions, ${allRanges.length} ranges)`);
+
+    return percentage;
+  }
+
+  // Page Link operations
+  async getPageLink(id: string): Promise<PageLink | undefined> {
+    const links = await this.get('pageLinks');
+    return links?.[id];
+  }
+
+  async getPageLinksBySource(sourceItemKey: string): Promise<PageLink[]> {
+    const links = await this.get('pageLinks');
+    if (!links) return [];
+    return Object.values(links).filter((l) => l.sourceItemKey === sourceItemKey);
+  }
+
+  async getPageLinksByTarget(targetItemKey: string): Promise<PageLink[]> {
+    const links = await this.get('pageLinks');
+    if (!links) return [];
+    return Object.values(links).filter((l) => l.targetItemKey === targetItemKey);
+  }
+
+  async getAllPageLinks(): Promise<Record<string, PageLink>> {
+    return (await this.get('pageLinks')) ?? {};
+  }
+
+  async savePageLink(link: PageLink): Promise<void> {
+    const links = (await this.get('pageLinks')) ?? {};
+    links[link.id] = link;
+    await this.set('pageLinks', links);
+  }
+
+  async deletePageLink(id: string): Promise<void> {
+    const links = await this.get('pageLinks');
+    if (links && links[id]) {
+      delete links[id];
+      await this.set('pageLinks', links);
+    }
+  }
+
+  // Auto-save Tab operations
+  async getAutoSaveTab(tabId: number): Promise<AutoSaveTab | undefined> {
+    const tabs = await this.get('autoSaveTabs');
+    return tabs?.[tabId];
+  }
+
+  async getAllAutoSaveTabs(): Promise<Record<number, AutoSaveTab>> {
+    return (await this.get('autoSaveTabs')) ?? {};
+  }
+
+  async saveAutoSaveTab(tab: AutoSaveTab): Promise<void> {
+    const tabs = (await this.get('autoSaveTabs')) ?? {};
+    tabs[tab.tabId] = tab;
+    await this.set('autoSaveTabs', tabs);
+  }
+
+  async deleteAutoSaveTab(tabId: number): Promise<void> {
+    const tabs = await this.get('autoSaveTabs');
+    if (tabs && tabs[tabId]) {
+      delete tabs[tabId];
+      await this.set('autoSaveTabs', tabs);
+    }
   }
 
   // Utility

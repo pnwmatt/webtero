@@ -8,6 +8,297 @@ console.log('Webtero content script loaded');
 handleOAuthCallback();
 
 let highlightToolbar: HTMLElement | null = null;
+
+// ============================================
+// Page Focus Tracking
+// ============================================
+
+let currentFocusSessionId: string | null = null;
+let currentItemKey: string | null = null;
+let scrollTrackingInterval: ReturnType<typeof setInterval> | null = null;
+let lastScrollPosition = { start: 0, end: 0 };
+
+/**
+ * Calculate the current viewport position as a percentage of document height
+ */
+function getViewportPercentage(): { start: number; end: number } {
+  const scrollTop = window.scrollY;
+  const viewportHeight = window.innerHeight;
+  const documentHeight = Math.max(
+    document.body.scrollHeight,
+    document.documentElement.scrollHeight
+  );
+
+  if (documentHeight <= viewportHeight) {
+    // Entire document fits in viewport
+    return { start: 0, end: 100 };
+  }
+
+  const start = (scrollTop / documentHeight) * 100;
+  const end = ((scrollTop + viewportHeight) / documentHeight) * 100;
+
+  return {
+    start: Math.round(start * 10) / 10,
+    end: Math.round(end * 10) / 10,
+  };
+}
+
+/**
+ * Start tracking focus/scroll for a saved page
+ */
+async function startFocusTracking(itemKey: string) {
+  console.log('Webtero: startFocusTracking called for itemKey:', itemKey);
+
+  if (currentFocusSessionId) {
+    console.log('Webtero: Already tracking, skipping');
+    return;
+  }
+
+  currentItemKey = itemKey;
+
+  try {
+    // Note: We pass tabId as -1 since content scripts can't access browser.tabs
+    // The background script can get the tab ID from the sender if needed
+    const response = await browser.runtime.sendMessage({
+      type: 'START_FOCUS_SESSION',
+      data: {
+        itemKey,
+        tabId: -1,
+      },
+    });
+
+    if (response.success) {
+      currentFocusSessionId = response.data.sessionId;
+
+      // Record initial position
+      const viewport = getViewportPercentage();
+      lastScrollPosition = viewport;
+      await updateFocusSession(viewport);
+
+      // Start tracking scroll changes
+      scrollTrackingInterval = setInterval(async () => {
+        const newPosition = getViewportPercentage();
+        // Only update if position changed significantly
+        if (
+          Math.abs(newPosition.start - lastScrollPosition.start) > 1 ||
+          Math.abs(newPosition.end - lastScrollPosition.end) > 1
+        ) {
+          lastScrollPosition = newPosition;
+          await updateFocusSession(newPosition);
+        }
+      }, 2000); // Check every 2 seconds
+    }
+  } catch (error) {
+    console.error('Failed to start focus tracking:', error);
+  }
+}
+
+/**
+ * Update the focus session with new scroll position
+ */
+async function updateFocusSession(readRange: { start: number; end: number }) {
+  if (!currentFocusSessionId) return;
+
+  console.log(`Webtero: Recording scroll position ${readRange.start.toFixed(1)}%-${readRange.end.toFixed(1)}%`);
+
+  try {
+    await browser.runtime.sendMessage({
+      type: 'UPDATE_FOCUS_SESSION',
+      data: {
+        sessionId: currentFocusSessionId,
+        readRange,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to update focus session:', error);
+  }
+}
+
+/**
+ * Stop focus tracking
+ */
+async function stopFocusTracking() {
+  if (scrollTrackingInterval) {
+    clearInterval(scrollTrackingInterval);
+    scrollTrackingInterval = null;
+  }
+
+  if (currentFocusSessionId) {
+    try {
+      await browser.runtime.sendMessage({
+        type: 'END_FOCUS_SESSION',
+        data: { sessionId: currentFocusSessionId },
+      });
+    } catch (error) {
+      console.error('Failed to end focus session:', error);
+    }
+    currentFocusSessionId = null;
+    currentItemKey = null;
+  }
+}
+
+// Stop tracking when page is hidden or unloaded
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopFocusTracking();
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  stopFocusTracking();
+});
+
+// ============================================
+// Link Indicators and Auto-Save
+// ============================================
+
+interface SavedUrlInfo {
+  url: string;
+  itemKey: string;
+  readPercentage: number;
+}
+
+let savedUrls: SavedUrlInfo[] = [];
+let autoSaveEnabled = false;
+let sourceItemKey: string | null = null;
+
+/**
+ * Add indicators to links pointing to saved pages
+ */
+function addLinkIndicators() {
+  if (savedUrls.length === 0) return;
+
+  // Create a map for faster lookup
+  const savedUrlMap = new Map<string, SavedUrlInfo>();
+  for (const info of savedUrls) {
+    savedUrlMap.set(normalizeUrlForComparison(info.url), info);
+  }
+
+  // Get current page URL for comparison
+  const currentPageUrl = normalizeUrlForComparison(window.location.href);
+
+  // Find all links on the page
+  const links = document.querySelectorAll('a[href]');
+  links.forEach((link) => {
+    const href = (link as HTMLAnchorElement).href;
+    if (!href) return;
+
+    // Skip anchor links and links to the current page
+    const linkEl = link as HTMLAnchorElement;
+    if (linkEl.getAttribute('href')?.startsWith('#')) return;
+
+    const normalizedHref = normalizeUrlForComparison(href);
+
+    // Skip if link points to current page
+    if (normalizedHref === currentPageUrl) return;
+    console.log('Webtero: Checking link for indicator:', normalizedHref, currentPageUrl);
+    const savedInfo = savedUrlMap.get(normalizedHref);
+
+    if (savedInfo) {
+      // Add indicator if not already present
+      if (!link.querySelector('.webtero-link-indicator')) {
+        const indicator = document.createElement('sup');
+        indicator.className = 'webtero-link-indicator';
+        indicator.textContent = `[wt ${savedInfo.readPercentage}%]`;
+        indicator.title = `Saved to Webtero - ${savedInfo.readPercentage}% read`;
+        indicator.style.cssText =
+          'font-size: 0.7em; color: #666; margin-left: 2px; font-weight: normal; text-decoration: none;';
+        link.appendChild(indicator);
+      } else {
+        // Update existing indicator
+        const indicator = link.querySelector('.webtero-link-indicator') as HTMLElement;
+        indicator.textContent = `[wt ${savedInfo.readPercentage}%]`;
+        indicator.title = `Saved to Webtero - ${savedInfo.readPercentage}% read`;
+      }
+    }
+  });
+}
+
+/**
+ * Remove all link indicators
+ */
+function removeLinkIndicators() {
+  document.querySelectorAll('.webtero-link-indicator').forEach((el) => el.remove());
+}
+
+/**
+ * Normalize URL for comparison (remove trailing slashes, fragments)
+ */
+function normalizeUrlForComparison(url: string): string {
+  try {
+    const parsed = new URL(url);
+    // Remove fragment
+    parsed.hash = '';
+    // Remove trailing slash from pathname
+    if (parsed.pathname.endsWith('/') && parsed.pathname !== '/') {
+      parsed.pathname = parsed.pathname.slice(0, -1);
+    }
+    return parsed.href.toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+/**
+ * Fetch saved URLs and add indicators
+ */
+async function loadSavedUrlsAndIndicators() {
+  try {
+    const response = await browser.runtime.sendMessage({ type: 'GET_SAVED_URLS' });
+    if (response.success && Array.isArray(response.data)) {
+      savedUrls = response.data;
+      addLinkIndicators();
+    }
+  } catch (error) {
+    console.error('Failed to load saved URLs:', error);
+  }
+}
+
+/**
+ * Handle link clicks for auto-save
+ */
+function handleLinkClick(event: MouseEvent) {
+  if (!autoSaveEnabled || !sourceItemKey) return;
+
+  const target = event.target as HTMLElement;
+  const link = target.closest('a[href]') as HTMLAnchorElement;
+  if (!link) return;
+
+  const href = link.href;
+  if (!href || href.startsWith('javascript:') || href.startsWith('#')) return;
+
+  // Notify background script about the link click
+  // The actual save happens when the new page loads
+  browser.runtime
+    .sendMessage({
+      type: 'LINK_CLICKED',
+      data: {
+        tabId: -1, // Will be determined by sender
+        targetUrl: href,
+      },
+    })
+    .catch((error) => {
+      console.error('Failed to notify link click:', error);
+    });
+}
+
+/**
+ * Enable auto-save mode for this tab
+ */
+function enableAutoSave(itemKey: string) {
+  autoSaveEnabled = true;
+  sourceItemKey = itemKey;
+  document.addEventListener('click', handleLinkClick, true);
+}
+
+/**
+ * Disable auto-save mode
+ */
+function disableAutoSave() {
+  autoSaveEnabled = false;
+  sourceItemKey = null;
+  document.removeEventListener('click', handleLinkClick, true);
+}
 // Track annotations that couldn't be found on the current page
 let notFoundAnnotationIds: Set<string> = new Set();
 let editToolbar: HTMLElement | null = null;
@@ -36,11 +327,11 @@ function createHighlightToolbar(): HTMLElement {
     <div class="webtero-toolbar-content">
       <div class="webtero-colors">
         ${colors
-          .map(
-            (color) =>
-              `<button class="webtero-color-btn" data-color="${color}" style="background: ${getColorValue(color)}" title="${color}"></button>`
-          )
-          .join('')}
+      .map(
+        (color) =>
+          `<button class="webtero-color-btn" data-color="${color}" style="background: ${getColorValue(color)}" title="${color}"></button>`
+      )
+      .join('')}
       </div>
       <button class="webtero-comment-btn" title="Add comment">💬</button>
     </div>
@@ -77,11 +368,11 @@ function createEditToolbar(): HTMLElement {
     <div class="webtero-toolbar-content">
       <div class="webtero-colors">
         ${colors
-          .map(
-            (color) =>
-              `<button class="webtero-color-btn" data-color="${color}" style="background: ${getColorValue(color)}" title="Change to ${color}"></button>`
-          )
-          .join('')}
+      .map(
+        (color) =>
+          `<button class="webtero-color-btn" data-color="${color}" style="background: ${getColorValue(color)}" title="Change to ${color}"></button>`
+      )
+      .join('')}
       </div>
       <button class="webtero-comment-btn" title="Edit comment">💬</button>
       <button class="webtero-delete-btn" title="Delete highlight">🗑️</button>
@@ -800,6 +1091,45 @@ browser.runtime.onMessage.addListener((message, sender) => {
       success: true,
       data: { notFoundIds: Array.from(notFoundAnnotationIds) },
     });
+  }
+
+  // Focus tracking messages
+  if (message.type === 'START_FOCUS_TRACKING') {
+    const { itemKey } = message.data;
+    startFocusTracking(itemKey);
+    return Promise.resolve({ success: true });
+  }
+
+  if (message.type === 'STOP_FOCUS_TRACKING') {
+    stopFocusTracking();
+    return Promise.resolve({ success: true });
+  }
+
+  // Link indicator messages
+  if (message.type === 'ENABLE_LINK_INDICATORS') {
+    loadSavedUrlsAndIndicators();
+    return Promise.resolve({ success: true });
+  }
+
+  if (message.type === 'DISABLE_LINK_INDICATORS') {
+    removeLinkIndicators();
+    return Promise.resolve({ success: true });
+  }
+
+  if (message.type === 'ENABLE_AUTO_SAVE_MODE') {
+    const { itemKey } = message.data;
+    enableAutoSave(itemKey);
+    return Promise.resolve({ success: true });
+  }
+
+  if (message.type === 'DISABLE_AUTO_SAVE_MODE') {
+    disableAutoSave();
+    return Promise.resolve({ success: true });
+  }
+
+  if (message.type === 'REFRESH_LINK_INDICATORS') {
+    loadSavedUrlsAndIndicators();
+    return Promise.resolve({ success: true });
   }
 
   return undefined;

@@ -76,6 +76,57 @@ browser.runtime.onMessage.addListener(
         case 'OAUTH_GET_USER_INFO':
           return await handleOAuthGetUserInfo();
 
+        // Page focus and link tracking handlers
+        case 'START_FOCUS_SESSION':
+          return await handleStartFocusSession(
+            message.data as { itemKey: string; tabId: number },
+            sender
+          );
+
+        case 'UPDATE_FOCUS_SESSION':
+          return await handleUpdateFocusSession(
+            message.data as { sessionId: string; readRange: { start: number; end: number } }
+          );
+
+        case 'END_FOCUS_SESSION':
+          return await handleEndFocusSession(
+            message.data as { sessionId: string }
+          );
+
+        case 'GET_PAGE_READ_PERCENTAGE':
+          return await handleGetPageReadPercentage(
+            message.data as { itemKey: string }
+          );
+
+        case 'ENABLE_AUTO_SAVE':
+          return await handleEnableAutoSave(
+            message.data as { tabId: number; sourceItemKey: string; sourceUrl: string }
+          );
+
+        case 'DISABLE_AUTO_SAVE':
+          return await handleDisableAutoSave(
+            message.data as { tabId: number }
+          );
+
+        case 'CHECK_AUTO_SAVE':
+          return await handleCheckAutoSave(
+            message.data as { tabId: number }
+          );
+
+        case 'LINK_CLICKED':
+          return await handleLinkClicked(
+            message.data as { tabId: number; targetUrl: string },
+            sender
+          );
+
+        case 'GET_PAGE_LINKS':
+          return await handleGetPageLinks(
+            message.data as { itemKey: string }
+          );
+
+        case 'GET_SAVED_URLS':
+          return await handleGetSavedUrls();
+
         default:
           return { success: false, error: 'Unknown message type' };
       }
@@ -649,3 +700,255 @@ async function handleOAuthGetUserInfo(): Promise<MessageResponse> {
     };
   }
 }
+
+// ============================================
+// Page Focus and Link Tracking Handlers
+// ============================================
+
+/**
+ * Start a new focus session for a saved page
+ */
+async function handleStartFocusSession(
+  data: { itemKey: string; tabId: number },
+  sender: browser.runtime.MessageSender
+): Promise<MessageResponse> {
+  // Get tab ID from sender if not provided
+  const tabId = data.tabId !== -1 ? data.tabId : (sender.tab?.id ?? -1);
+
+  console.log('Webtero: Starting focus session for', data.itemKey, 'in tab', tabId);
+
+  const session = {
+    id: generateId(),
+    itemKey: data.itemKey,
+    tabId: tabId,
+    startTime: new Date().toISOString(),
+    readRanges: [],
+  };
+
+  await storage.saveFocusSession(session);
+
+  return { success: true, data: { sessionId: session.id } };
+}
+
+/**
+ * Update a focus session with new scroll position data
+ */
+async function handleUpdateFocusSession(data: {
+  sessionId: string;
+  readRange: { start: number; end: number };
+}): Promise<MessageResponse> {
+  const session = await storage.getFocusSession(data.sessionId);
+  if (!session) {
+    return { success: false, error: 'Session not found' };
+  }
+
+  // Add the new range (will be merged when calculating percentage)
+  session.readRanges.push(data.readRange);
+  await storage.saveFocusSession(session);
+
+  return { success: true };
+}
+
+/**
+ * End a focus session
+ */
+async function handleEndFocusSession(data: {
+  sessionId: string;
+}): Promise<MessageResponse> {
+  const session = await storage.getFocusSession(data.sessionId);
+  if (!session) {
+    return { success: false, error: 'Session not found' };
+  }
+
+  session.endTime = new Date().toISOString();
+  await storage.saveFocusSession(session);
+
+  return { success: true };
+}
+
+/**
+ * Get read percentage for a saved page
+ */
+async function handleGetPageReadPercentage(data: {
+  itemKey: string;
+}): Promise<MessageResponse> {
+  const percentage = await storage.getReadPercentage(data.itemKey);
+  return { success: true, data: { percentage } };
+}
+
+/**
+ * Enable auto-save for a tab (after saving a page)
+ */
+async function handleEnableAutoSave(data: {
+  tabId: number;
+  sourceItemKey: string;
+  sourceUrl: string;
+}): Promise<MessageResponse> {
+  await storage.saveAutoSaveTab({
+    tabId: data.tabId,
+    sourceItemKey: data.sourceItemKey,
+    sourceUrl: data.sourceUrl,
+    enabled: true,
+  });
+
+  return { success: true };
+}
+
+/**
+ * Disable auto-save for a tab
+ */
+async function handleDisableAutoSave(data: {
+  tabId: number;
+}): Promise<MessageResponse> {
+  await storage.deleteAutoSaveTab(data.tabId);
+  return { success: true };
+}
+
+/**
+ * Check if auto-save is enabled for a tab
+ */
+async function handleCheckAutoSave(data: {
+  tabId: number;
+}): Promise<MessageResponse> {
+  const tab = await storage.getAutoSaveTab(data.tabId);
+  return {
+    success: true,
+    data: {
+      enabled: tab?.enabled ?? false,
+      sourceItemKey: tab?.sourceItemKey,
+      sourceUrl: tab?.sourceUrl,
+    },
+  };
+}
+
+/**
+ * Handle a link click from a page with auto-save enabled
+ * Auto-saves the target page and creates a link record
+ */
+async function handleLinkClicked(
+  data: { tabId: number; targetUrl: string },
+  sender: browser.runtime.MessageSender
+): Promise<MessageResponse> {
+  const autoSaveTab = await storage.getAutoSaveTab(data.tabId);
+  if (!autoSaveTab?.enabled) {
+    return { success: false, error: 'Auto-save not enabled for this tab' };
+  }
+
+  const targetUrl = normalizeUrl(data.targetUrl);
+
+  // Check if target page is already saved
+  let targetPage = await storage.getPage(targetUrl);
+
+  // If not saved, save it now
+  if (!targetPage) {
+    // We need to wait for the page to load to get the title
+    // For now, use the URL as title - content script will update after load
+    const result = await handleSavePage({
+      url: targetUrl,
+      title: targetUrl, // Will be updated by content script
+      collections: [], // Use same collections as source? TBD
+    });
+
+    if (!result.success) {
+      return result;
+    }
+
+    targetPage = await storage.getPage(targetUrl);
+  }
+
+  if (targetPage) {
+    // Create a link record
+    const link = {
+      id: generateId(),
+      sourceItemKey: autoSaveTab.sourceItemKey,
+      targetItemKey: targetPage.zoteroItemKey,
+      targetUrl: targetUrl,
+      created: new Date().toISOString(),
+    };
+
+    await storage.savePageLink(link);
+
+    // Enable auto-save for the new tab (link clicks typically open in new tab or navigate)
+    // The content script will handle enabling auto-save when the page loads
+
+    return { success: true, data: { link, targetPage } };
+  }
+
+  return { success: false, error: 'Failed to save target page' };
+}
+
+/**
+ * Get all links from/to a page
+ */
+async function handleGetPageLinks(data: {
+  itemKey: string;
+}): Promise<MessageResponse> {
+  const outgoingLinks = await storage.getPageLinksBySource(data.itemKey);
+  const incomingLinks = await storage.getPageLinksByTarget(data.itemKey);
+
+  // Get read percentages for linked pages
+  const linkedPages: Array<{
+    itemKey: string;
+    url: string;
+    direction: 'outgoing' | 'incoming';
+    readPercentage: number;
+  }> = [];
+
+  for (const link of outgoingLinks) {
+    const percentage = await storage.getReadPercentage(link.targetItemKey);
+    linkedPages.push({
+      itemKey: link.targetItemKey,
+      url: link.targetUrl,
+      direction: 'outgoing',
+      readPercentage: percentage,
+    });
+  }
+
+  for (const link of incomingLinks) {
+    const percentage = await storage.getReadPercentage(link.sourceItemKey);
+    // Get source URL from saved page
+    const pages = await storage.getAllPages();
+    const sourcePage = Object.values(pages).find(
+      (p) => p.zoteroItemKey === link.sourceItemKey
+    );
+    if (sourcePage) {
+      linkedPages.push({
+        itemKey: link.sourceItemKey,
+        url: sourcePage.url,
+        direction: 'incoming',
+        readPercentage: percentage,
+      });
+    }
+  }
+
+  return { success: true, data: linkedPages };
+}
+
+/**
+ * Get all saved URLs with their item keys and read percentages
+ * Used by content script to mark links on the page
+ */
+async function handleGetSavedUrls(): Promise<MessageResponse> {
+  const pages = await storage.getAllPages();
+  const savedUrls: Array<{
+    url: string;
+    itemKey: string;
+    readPercentage: number;
+  }> = [];
+
+  for (const page of Object.values(pages)) {
+    const percentage = await storage.getReadPercentage(page.zoteroItemKey);
+    savedUrls.push({
+      url: page.url,
+      itemKey: page.zoteroItemKey,
+      readPercentage: percentage,
+    });
+  }
+
+  return { success: true, data: savedUrls };
+}
+
+// Clean up auto-save tabs when tabs are closed
+browser.tabs.onRemoved.addListener(async (tabId) => {
+  await storage.deleteAutoSaveTab(tabId);
+});

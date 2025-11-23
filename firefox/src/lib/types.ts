@@ -52,12 +52,62 @@ export interface AuthData {
   userID: string;
 }
 
+/**
+ * Tracks a reading session for a saved page
+ * Records scroll position over time to calculate read percentage
+ */
+export interface PageFocusSession {
+  id: string;
+  itemKey: string; // Zotero item key (not URL for privacy)
+  tabId: number; // Browser tab ID
+  startTime: string; // ISO timestamp
+  endTime?: string; // ISO timestamp when session ended
+  readRanges: ReadRange[]; // Scroll ranges that were viewed
+}
+
+/**
+ * A range of the page that was read (based on scroll position)
+ * Stored as percentages of total document height
+ */
+export interface ReadRange {
+  start: number; // 0-100 percentage
+  end: number; // 0-100 percentage
+}
+
+/**
+ * Tracks links between saved pages
+ * When user clicks a link from Page A to Page B, both being saved
+ */
+export interface PageLink {
+  id: string;
+  sourceItemKey: string; // Item key of the page the link was clicked from
+  targetItemKey: string; // Item key of the page that was navigated to
+  targetUrl: string; // URL of the target (for matching)
+  created: string; // ISO timestamp
+}
+
+/**
+ * Tracks which tabs have auto-save enabled (after saving a page)
+ */
+export interface AutoSaveTab {
+  tabId: number;
+  sourceItemKey: string; // The saved page that triggered auto-save mode
+  sourceUrl: string; // URL of the source page
+  enabled: boolean;
+}
+
 export interface StorageData {
   auth?: AuthData;
   pages: Record<string, SavedPage>;
   annotations: Record<string, Annotation>;
   projects: Record<string, Project>;
   lastSync?: string;
+  // Page focus tracking (keyed by session ID)
+  pageFocusSessions: Record<string, PageFocusSession>;
+  // Links between saved pages (keyed by link ID)
+  pageLinks: Record<string, PageLink>;
+  // Tabs with auto-save enabled (keyed by tab ID)
+  autoSaveTabs: Record<number, AutoSaveTab>;
 }
 
 // Zotero API types
@@ -148,7 +198,18 @@ export type MessageType =
   | 'OAUTH_CALLBACK'
   | 'OAUTH_CHECK_AUTH'
   | 'OAUTH_SIGN_OUT'
-  | 'OAUTH_GET_USER_INFO';
+  | 'OAUTH_GET_USER_INFO'
+  // Page focus and link tracking
+  | 'START_FOCUS_SESSION'
+  | 'UPDATE_FOCUS_SESSION'
+  | 'END_FOCUS_SESSION'
+  | 'GET_PAGE_READ_PERCENTAGE'
+  | 'ENABLE_AUTO_SAVE'
+  | 'DISABLE_AUTO_SAVE'
+  | 'CHECK_AUTO_SAVE'
+  | 'LINK_CLICKED'
+  | 'GET_PAGE_LINKS'
+  | 'GET_SAVED_URLS';
 
 export interface Message {
   type: MessageType;

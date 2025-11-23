@@ -32,6 +32,9 @@ const zoteroReaderOverlay = document.getElementById('zoteroReaderOverlay') as HT
 const mainSidebar = document.getElementById('mainSidebar') as HTMLDivElement;
 const versionsList = document.getElementById('versionsList') as HTMLDivElement;
 const showAllAnnotationsBtn = document.getElementById('showAllAnnotations') as HTMLButtonElement;
+const readProgress = document.getElementById('readProgress') as HTMLDivElement;
+const readProgressFill = document.getElementById('readProgressFill') as HTMLDivElement;
+const readProgressText = document.getElementById('readProgressText') as HTMLSpanElement;
 
 let currentTab: browser.tabs.Tab | null = null;
 let currentPage: SavedPage | null = null;
@@ -164,6 +167,12 @@ async function loadPageData() {
       }
 
       displayAnnotations(currentAnnotations);
+
+      // Load links for this page
+      loadLinks();
+
+      // Enable focus tracking and link indicators for saved pages
+      checkAndEnableTracking();
     } else {
       pageStatus.innerHTML = `<p class="error">${response.error}</p>`;
     }
@@ -199,12 +208,18 @@ async function displayPageStatus() {
     // Display versions list
     displayVersionsList();
     startLiveVersionTimer();
+
+    // Update read progress
+    await updateReadProgress();
   } else {
     // First time saving
     savedInfo.style.display = 'none';
     savedIcon.style.display = 'none';
     savePageBtn.textContent = 'Save';
     stopLiveVersionTimer();
+
+    // Hide read progress for unsaved pages
+    readProgress.style.display = 'none';
   }
 }
 
@@ -408,6 +423,13 @@ savePageBtn.addEventListener('click', async () => {
     });
 
     if (response.success) {
+      const { itemKey } = response.data;
+
+      // Enable auto-save mode and focus tracking for this tab
+      if (currentTab.id && itemKey) {
+        await enableAutoSaveAndTracking(currentTab.id, itemKey, currentTab.url);
+      }
+
       await loadPageData();
     } else {
       alert(`Failed to save page: ${response.error}`);
@@ -645,6 +667,204 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+// ============================================
+// Auto-Save and Focus Tracking
+// ============================================
+
+/**
+ * Enable auto-save mode and focus tracking for a tab
+ */
+async function enableAutoSaveAndTracking(tabId: number, itemKey: string, url: string) {
+  try {
+    // Enable auto-save in background
+    await browser.runtime.sendMessage({
+      type: 'ENABLE_AUTO_SAVE',
+      data: { tabId, sourceItemKey: itemKey, sourceUrl: url },
+    });
+
+    // Tell content script to start focus tracking and enable auto-save mode
+    await browser.tabs.sendMessage(tabId, {
+      type: 'START_FOCUS_TRACKING',
+      data: { itemKey },
+    });
+
+    await browser.tabs.sendMessage(tabId, {
+      type: 'ENABLE_AUTO_SAVE_MODE',
+      data: { itemKey },
+    });
+
+    // Enable link indicators
+    await browser.tabs.sendMessage(tabId, {
+      type: 'ENABLE_LINK_INDICATORS',
+    });
+
+    console.log('Auto-save and tracking enabled for tab', tabId);
+  } catch (error) {
+    console.error('Failed to enable auto-save and tracking:', error);
+  }
+}
+
+/**
+ * Update the read progress indicator
+ */
+async function updateReadProgress() {
+  if (!currentPage?.zoteroItemKey) {
+    readProgress.style.display = 'none';
+    return;
+  }
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'GET_PAGE_READ_PERCENTAGE',
+      data: { itemKey: currentPage.zoteroItemKey },
+    });
+
+    if (response.success) {
+      const percentage = response.data.percentage || 0;
+      readProgress.style.display = 'flex';
+      readProgressFill.style.width = `${percentage}%`;
+      readProgressText.textContent = `${percentage}% read`;
+    }
+  } catch (error) {
+    console.error('Failed to get read percentage:', error);
+    readProgress.style.display = 'none';
+  }
+}
+
+/**
+ * Check if current page is saved and enable tracking if so
+ */
+async function checkAndEnableTracking() {
+  if (!currentTab?.id || !currentPage?.zoteroItemKey) return;
+
+  try {
+    // Start focus tracking for saved pages
+    await browser.tabs.sendMessage(currentTab.id, {
+      type: 'START_FOCUS_TRACKING',
+      data: { itemKey: currentPage.zoteroItemKey },
+    });
+
+    // Enable link indicators
+    await browser.tabs.sendMessage(currentTab.id, {
+      type: 'ENABLE_LINK_INDICATORS',
+    });
+  } catch (error) {
+    // Content script may not be loaded yet
+    console.debug('Could not enable tracking:', error);
+  }
+}
+
+// ============================================
+// Links Display
+// ============================================
+
+const linksList = document.getElementById('linksList') as HTMLDivElement;
+
+interface LinkedPage {
+  itemKey: string;
+  url: string;
+  direction: 'outgoing' | 'incoming';
+  readPercentage: number;
+}
+
+/**
+ * Load and display links for the current page
+ */
+async function loadLinks() {
+  if (!currentPage?.zoteroItemKey) {
+    linksList.innerHTML = '<p class="empty">Save this page to start tracking links.</p>';
+    return;
+  }
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'GET_PAGE_LINKS',
+      data: { itemKey: currentPage.zoteroItemKey },
+    });
+
+    if (response.success && Array.isArray(response.data)) {
+      displayLinks(response.data as LinkedPage[]);
+    }
+  } catch (error) {
+    console.error('Failed to load links:', error);
+    linksList.innerHTML = '<p class="empty">Failed to load links.</p>';
+  }
+}
+
+/**
+ * Display linked pages
+ */
+function displayLinks(links: LinkedPage[]) {
+  if (links.length === 0) {
+    linksList.innerHTML =
+      '<p class="empty">No links yet. Click links on this page after saving to track them.</p>';
+    return;
+  }
+
+  const outgoing = links.filter((l) => l.direction === 'outgoing');
+  const incoming = links.filter((l) => l.direction === 'incoming');
+
+  let html = '';
+
+  if (outgoing.length > 0) {
+    html += '<div class="link-group"><h4>Links from this page</h4>';
+    html += outgoing
+      .map(
+        (link) => `
+        <div class="link-item" data-url="${escapeHtml(link.url)}">
+          <span class="link-indicator">[wt ${link.readPercentage}%]</span>
+          <span class="link-url" title="${escapeHtml(link.url)}">${escapeHtml(truncateUrl(link.url))}</span>
+        </div>
+      `
+      )
+      .join('');
+    html += '</div>';
+  }
+
+  if (incoming.length > 0) {
+    html += '<div class="link-group"><h4>Links to this page</h4>';
+    html += incoming
+      .map(
+        (link) => `
+        <div class="link-item" data-url="${escapeHtml(link.url)}">
+          <span class="link-indicator">[wt ${link.readPercentage}%]</span>
+          <span class="link-url" title="${escapeHtml(link.url)}">${escapeHtml(truncateUrl(link.url))}</span>
+        </div>
+      `
+      )
+      .join('');
+    html += '</div>';
+  }
+
+  linksList.innerHTML = html;
+
+  // Add click handlers to navigate to linked pages
+  linksList.querySelectorAll('.link-item').forEach((el) => {
+    el.addEventListener('click', () => {
+      const url = (el as HTMLElement).dataset.url;
+      if (url) {
+        browser.tabs.create({ url });
+      }
+    });
+  });
+}
+
+/**
+ * Truncate URL for display
+ */
+function truncateUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname + parsed.search;
+    if (path.length > 40) {
+      return parsed.hostname + path.slice(0, 37) + '...';
+    }
+    return parsed.hostname + path;
+  } catch {
+    return url.length > 50 ? url.slice(0, 47) + '...' : url;
+  }
 }
 
 /**

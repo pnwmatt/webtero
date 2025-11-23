@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,13 +8,15 @@
   <link rel="stylesheet" href="../styles/reset.css">
   <link rel="stylesheet" href="sidebar.css">
 </head>
+
 <body>
   <!-- Sign-in overlay (shown when OAuth is enabled and user is not authenticated) -->
   <div id="signInOverlay" class="sign-in-overlay" style="display: none;">
     <div class="sign-in-content">
       <div class="sign-in-logo">
         <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+          <path
+            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
         </svg>
       </div>
       <h1 class="sign-in-title">Welcome to Webtero</h1>
@@ -60,6 +63,14 @@
 
         <div id="pageActions" class="page-actions" style="display: none;">
           <div id="savedInfo" class="saved-info" style="display: none;">
+            <!-- Read progress indicator -->
+            <div id="readProgress" class="read-progress" style="display: none;">
+              <div class="read-progress-bar">
+                <div id="readProgressFill" class="read-progress-fill"></div>
+              </div>
+              <span id="readProgressText" class="read-progress-text">0% read</span>
+            </div>
+
             <p class="meta" id="savedProject"></p>
             <p class="meta" id="savedDate"></p>
 
@@ -78,20 +89,34 @@
       </div>
     </details>
 
-    <details class="section annotations" open>
+    <details class="section links" open>
       <summary class="section-header">
         <span class="chevron">&#8250;</span>
-        <h2>Annotations</h2>
-        <button id="refreshAnnotations" title="Refresh">&#8635;</button>
+        <h2>Links</h2>
       </summary>
       <div class="section-content">
-        <div id="annotationsView" class="annotations-view">
-          <div id="annotationsList" class="annotations">
-            <p class="empty">No annotations yet. Highlight text on the page to create one.</p>
+        <div id="linksView" class="links-view">
+          <div id="linksList" class="links">
+            <p class="empty">No links yet. Save this page and then click a link from this page to create a link.</p>
           </div>
         </div>
       </div>
     </details>
+
+<details class="section annotations" open>
+  <summary class="section-header">
+    <span class="chevron">&#8250;</span>
+    <h2>Annotations</h2>
+    <button id="refreshAnnotations" title="Refresh">&#8635;</button>
+  </summary>
+  <div class="section-content">
+    <div id="annotationsView" class="annotations-view">
+      <div id="annotationsList" class="annotations">
+        <p class="empty">No annotations yet. Highlight text on the page to create one.</p>
+      </div>
+    </div>
+  </div>
+</details>
 
     <details class="section projects hidden" style="display: none;">
       <summary class="section-header">
@@ -126,4 +151,5 @@
 
   <script src="sidebar.js" type="module"></script>
 </body>
+
 </html>
