@@ -19,7 +19,7 @@ class ZoteroAPI {
 
   private async getUserID(): Promise<string> {
     const auth = await storage.getAuth();
-    return auth?.userID ?? '13937999'; // Placeholder userID
+    return auth?.userID ?? '13[...]'; // Placeholder userID
   }
 
   /**
@@ -161,7 +161,7 @@ class ZoteroAPI {
             },
             "links": {
                 "self": {
-                    "href": "https://api.zotero.org/users/13937999/items/3BPCPE3N",
+                    "href": "https://api.zotero.org/users/13[...]/items/3BPCPE3N",
                     "type": "application/json"
                 },
                 "alternate": {

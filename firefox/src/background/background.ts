@@ -95,7 +95,7 @@ async function handleGetPageData(data: {
       snapshots = zoteroSnapshots.map((s) => ({
         key: s.key,
         title: s.data.title || 'Snapshot',
-        dateAdded: s.data.dateAdded || '',
+        dateAdded: s.data.dateAdded ? String(s.data.dateAdded) : '',
         url: s.data.url || normalizedUrl,
       }));
     } catch (error) {
@@ -331,6 +331,48 @@ async function handleGetAnnotations(data: {
 
 /**
  * Sync projects from Zotero
+ * [
+    {
+        "key": "SI5SI425",
+        "version": 342,
+        "library": {
+            "type": "user",
+            "id": 13[...],
+            "name": "mm",
+            "links": {
+                "alternate": {
+                    "href": "https://www.zotero.org/mm",
+                    "type": "text/html"
+                }
+            }
+        },
+        "links": {
+            "self": {
+                "href": "https://api.zotero.org/users/13[...]/collections/SI5SI425",
+                "type": "application/json"
+            },
+            "alternate": {
+                "href": "https://www.zotero.org/mm/collections/SI5SI425",
+                "type": "text/html"
+            },
+            "up": {
+                "href": "https://api.zotero.org/users/13[...]/collections/K2NBIMZA",
+                "type": "application/json"
+            }
+        },
+        "meta": {
+            "numCollections": 0,
+            "numItems": 0
+        },
+        "data": {
+            "key": "SI5SI425",
+            "version": 342,
+            "name": "Competition",
+            "parentCollection": "K2NBIMZA",
+            "relations": {}
+        }
+    }
+]
  */
 async function handleSyncProjects(): Promise<MessageResponse> {
   const collections = await zoteroAPI.getCollections();
@@ -344,7 +386,6 @@ async function handleSyncProjects(): Promise<MessageResponse> {
       parentId: collection.data.parentCollection || undefined,
       itemCount: collection.meta?.numItems ?? 0,
       version: collection.version,
-      dateModified: collection.data.dateModified,
     };
   }
 

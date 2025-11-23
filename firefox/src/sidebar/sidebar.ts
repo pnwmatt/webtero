@@ -39,6 +39,32 @@ let liveVersionTimer: ReturnType<typeof setInterval> | null = null;
 const HIGHLIGHT_ICON = `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.7 13.4c-.1.1-.2.3-.2.5 0 .4.3.7.7.7.2 0 .4-.1.5-.2l5.8-5.8-1-1-5.8 5.8zM13 3.9l-.9-.9c-.4-.4-1-.4-1.4 0l-1.2 1.2 2.3 2.3 1.2-1.2c.4-.4.4-1 0-1.4zM4.5 7.7l2.3 2.3 4.6-4.6-2.3-2.3-4.6 4.6z"/></svg>`;
 
 /**
+ * Check if URL is a restricted page where Webtero cannot operate
+ */
+function isRestrictedUrl(url: string): boolean {
+  // Check for browser internal protocols
+  const restrictedProtocols = ['about:', 'mozilla:', 'chrome:', 'moz-extension:', 'config:', 'resource:'];
+  if (restrictedProtocols.some((protocol) => url.startsWith(protocol))) {
+    return true;
+  }
+
+  // Check for specific restricted domains
+  try {
+    const urlObj = new URL(url);
+    const restrictedHosts = [
+      'addons.mozilla.org',
+      'accounts.firefox.com',
+      'support.mozilla.org',
+      'zotero.org',
+      'www.zotero.org',
+    ];
+    return restrictedHosts.includes(urlObj.hostname);
+  } catch {
+    return true; // Invalid URLs are restricted
+  }
+}
+
+/**
  * Check if current URL is a Zotero Web Library reader page
  * Pattern: zotero.org/{username}/items/{itemKey}/attachment/{attachmentKey}/reader
  */
@@ -80,6 +106,14 @@ async function loadPageData() {
   currentTab = await getCurrentTab();
   if (!currentTab?.url) {
     pageStatus.innerHTML = '<p class="error">No active tab</p>';
+    return;
+  }
+
+  // Check if on restricted page
+  if (isRestrictedUrl(currentTab.url)) {
+    pageStatus.innerHTML = '<p class="empty">Webtero is not available on this site.</p>';
+    pageActions.style.display = 'none';
+    savePageBtn.disabled = true;
     return;
   }
 

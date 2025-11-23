@@ -140,6 +140,8 @@ export type MessageType =
   | 'GET_ANNOTATIONS'
   | 'SYNC_PROJECTS'
   | 'HIGHLIGHT_TEXT'
+  | 'GET_ALL_SNAPSHOT_ANNOTATIONS'
+  | 'INJECT_SINGLEFILE'
   | 'DELETE_ANNOTATION';
 
 export interface Message {
