@@ -2,6 +2,8 @@ import type { Message, MessageResponse } from '../lib/types';
 import { storage } from '../lib/storage';
 import { zoteroAPI } from '../lib/zotero-api';
 import { generateId, normalizeUrl, md5 } from '../lib/utils';
+import { config } from '../lib/config';
+import * as zoteroOAuth from '../lib/zotero-oauth';
 
 console.log('Webtero background script loaded');
 
@@ -57,6 +59,22 @@ browser.runtime.onMessage.addListener(
 
         case 'INJECT_SINGLEFILE':
           return await handleInjectSingleFile(sender);
+
+        // OAuth handlers
+        case 'OAUTH_START':
+          return await handleOAuthStart();
+
+        case 'OAUTH_CALLBACK':
+          return await handleOAuthCallback(message.data as { queryString: string });
+
+        case 'OAUTH_CHECK_AUTH':
+          return await handleOAuthCheckAuth();
+
+        case 'OAUTH_SIGN_OUT':
+          return await handleOAuthSignOut();
+
+        case 'OAUTH_GET_USER_INFO':
+          return await handleOAuthGetUserInfo();
 
         default:
           return { success: false, error: 'Unknown message type' };
@@ -540,6 +558,94 @@ async function handleGetAllSnapshotAnnotations(data: {
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+// ============================================
+// OAuth Handlers
+// ============================================
+
+/**
+ * Start OAuth authorization flow
+ */
+async function handleOAuthStart(): Promise<MessageResponse> {
+  if (!config.features.oauthEnabled) {
+    return { success: false, error: 'OAuth is not enabled' };
+  }
+
+  try {
+    const userInfo = await zoteroOAuth.authorize();
+    return { success: true, data: userInfo };
+  } catch (error) {
+    console.error('OAuth authorization failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Authorization failed',
+    };
+  }
+}
+
+/**
+ * Handle OAuth callback from content script
+ */
+async function handleOAuthCallback(data: {
+  queryString: string;
+}): Promise<MessageResponse> {
+  try {
+    await zoteroOAuth.onAuthorizationComplete(data.queryString);
+    return { success: true };
+  } catch (error) {
+    console.error('OAuth callback failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Callback processing failed',
+    };
+  }
+}
+
+/**
+ * Check if user is authenticated
+ */
+async function handleOAuthCheckAuth(): Promise<MessageResponse> {
+  const isAuthenticated = await zoteroOAuth.isAuthenticated();
+  return {
+    success: true,
+    data: {
+      isAuthenticated,
+      oauthEnabled: config.features.oauthEnabled,
+    },
+  };
+}
+
+/**
+ * Sign out the current user
+ */
+async function handleOAuthSignOut(): Promise<MessageResponse> {
+  try {
+    await zoteroOAuth.signOut();
+    return { success: true };
+  } catch (error) {
+    console.error('Sign out failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Sign out failed',
+    };
+  }
+}
+
+/**
+ * Get current user info
+ */
+async function handleOAuthGetUserInfo(): Promise<MessageResponse> {
+  try {
+    const userInfo = await zoteroOAuth.getUserInfo();
+    return { success: true, data: userInfo };
+  } catch (error) {
+    console.error('Failed to get user info:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get user info',
     };
   }
 }

@@ -38,6 +38,95 @@ body {
   color: var(--fill-primary);
 }
 
+/* ============================================
+   SIGN-IN OVERLAY
+   ============================================ */
+
+.sign-in-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--material-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.sign-in-content {
+  text-align: center;
+  padding: 2rem;
+  max-width: 280px;
+}
+
+.sign-in-logo {
+  color: var(--accent-blue50);
+  margin-bottom: 1.5rem;
+}
+
+.sign-in-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+  color: var(--fill-primary);
+}
+
+.sign-in-description {
+  font-size: 0.875rem;
+  color: var(--fill-secondary);
+  margin: 0 0 1.5rem 0;
+  line-height: 1.5;
+}
+
+.sign-in-btn {
+  display: block;
+  width: 100%;
+  padding: 0.875rem 1.5rem;
+  background: #cc2936;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.sign-in-btn:hover {
+  background: #a82330;
+}
+
+.sign-in-btn:disabled {
+  background: #bbb;
+  cursor: not-allowed;
+}
+
+.sign-in-error {
+  margin: 1rem 0 0 0;
+  padding: 0.75rem;
+  background: #ffebee;
+  color: #c62828;
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.sign-in-footer {
+  margin: 1.5rem 0 0 0;
+  font-size: 0.8125rem;
+  color: var(--fill-tertiary);
+}
+
+.sign-in-footer a {
+  color: var(--accent-blue50);
+  text-decoration: none;
+}
+
+.sign-in-footer a:hover {
+  text-decoration: underline;
+}
+
 /* Zotero Reader Overlay */
 .zotero-reader-overlay {
   position: fixed;

@@ -142,7 +142,13 @@ export type MessageType =
   | 'HIGHLIGHT_TEXT'
   | 'GET_ALL_SNAPSHOT_ANNOTATIONS'
   | 'INJECT_SINGLEFILE'
-  | 'DELETE_ANNOTATION';
+  | 'DELETE_ANNOTATION'
+  // OAuth messages
+  | 'OAUTH_START'
+  | 'OAUTH_CALLBACK'
+  | 'OAUTH_CHECK_AUTH'
+  | 'OAUTH_SIGN_OUT'
+  | 'OAUTH_GET_USER_INFO';
 
 export interface Message {
   type: MessageType;

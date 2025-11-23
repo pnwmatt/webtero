@@ -1,8 +1,35 @@
 import * as esbuild from 'esbuild';
-import { copyFileSync, mkdirSync, existsSync } from 'fs';
+import { copyFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 
 const isWatch = process.argv.includes('--watch');
+
+// Load environment variables from .env file
+function loadEnv() {
+  const envPath = '.env';
+  const defaults = {
+    FEATURE_OAUTH_ENABLED: 'false',
+    ZOTERO_OAUTH_CLIENT_KEY: '',
+    ZOTERO_OAUTH_CLIENT_SECRET: '',
+  };
+
+  if (existsSync(envPath)) {
+    const envContent = readFileSync(envPath, 'utf-8');
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        const [key, ...valueParts] = trimmed.split('=');
+        if (key && valueParts.length > 0) {
+          defaults[key.trim()] = valueParts.join('=').trim();
+        }
+      }
+    }
+  }
+
+  return defaults;
+}
+
+const env = loadEnv();
 
 const commonOptions = {
   bundle: true,
@@ -10,6 +37,11 @@ const commonOptions = {
   target: 'firefox115',
   format: 'esm',
   logLevel: 'info',
+  define: {
+    '__FEATURE_OAUTH_ENABLED__': env.FEATURE_OAUTH_ENABLED === 'true' ? 'true' : 'false',
+    '__ZOTERO_OAUTH_CLIENT_KEY__': JSON.stringify(env.ZOTERO_OAUTH_CLIENT_KEY || ''),
+    '__ZOTERO_OAUTH_CLIENT_SECRET__': JSON.stringify(env.ZOTERO_OAUTH_CLIENT_SECRET || ''),
+  },
 };
 
 // Ensure dist directory exists

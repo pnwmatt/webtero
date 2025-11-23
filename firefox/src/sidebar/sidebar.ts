@@ -1,8 +1,14 @@
 import type { SavedPage, Annotation, Project, Snapshot } from '../lib/types';
 import { storage } from '../lib/storage';
 import { formatDate } from '../lib/utils';
+import { config } from '../lib/config';
 
-// DOM elements
+// DOM elements - Sign-in overlay
+const signInOverlay = document.getElementById('signInOverlay') as HTMLDivElement;
+const signInBtn = document.getElementById('signInBtn') as HTMLButtonElement;
+const signInError = document.getElementById('signInError') as HTMLParagraphElement;
+
+// DOM elements - Main sidebar
 const settingsBtn = document.getElementById('settingsBtn') as HTMLButtonElement;
 const pageStatus = document.getElementById('pageStatus') as HTMLDivElement;
 const pageActions = document.getElementById('pageActions') as HTMLDivElement;
@@ -628,9 +634,64 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+/**
+ * Check authentication status and show appropriate UI
+ */
+async function checkAuthAndInitialize(): Promise<void> {
+  // If OAuth is enabled, check if user is authenticated
+  if (config.features.oauthEnabled) {
+    const auth = await storage.getAuth();
+    const isAuthenticated = !!(auth?.apiKey && auth?.userID);
+
+    if (!isAuthenticated) {
+      // Show sign-in overlay, hide main sidebar
+      signInOverlay.style.display = 'flex';
+      mainSidebar.style.display = 'none';
+      return;
+    }
+  }
+
+  // User is authenticated (or OAuth is disabled) - show main sidebar
+  signInOverlay.style.display = 'none';
+  mainSidebar.style.display = 'flex';
+
+  // Initialize the sidebar
+  loadPageData();
+  loadProjects();
+}
+
+/**
+ * Handle sign-in button click
+ */
+async function handleSignIn(): Promise<void> {
+  signInBtn.disabled = true;
+  signInBtn.textContent = 'Signing in...';
+  signInError.style.display = 'none';
+
+  try {
+    const response = await browser.runtime.sendMessage({ type: 'OAUTH_START' });
+
+    if (!response.success) {
+      throw new Error(response.error || 'Sign-in failed');
+    }
+
+    // Success - reload to show main sidebar
+    await checkAuthAndInitialize();
+  } catch (error) {
+    console.error('OAuth sign-in failed:', error);
+    signInError.textContent = error instanceof Error ? error.message : 'Sign-in failed. Please try again.';
+    signInError.style.display = 'block';
+  } finally {
+    signInBtn.disabled = false;
+    signInBtn.textContent = 'Sign in with Zotero';
+  }
+}
+
+// Sign-in button handler
+signInBtn.addEventListener('click', handleSignIn);
+
 // Initialize
-loadPageData();
-loadProjects();
+checkAuthAndInitialize();
 
 // Listen for tab changes
 browser.tabs.onActivated.addListener(() => {

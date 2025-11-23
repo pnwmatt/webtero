@@ -1,7 +1,11 @@
 import type { Annotation, HighlightColor } from '../lib/types';
 import { getXPath, getNodeFromXPath, getColorValue } from '../lib/utils';
+import { config } from '../lib/config';
 
 console.log('Webtero content script loaded');
+
+// Check for OAuth callback immediately on load
+handleOAuthCallback();
 
 let highlightToolbar: HTMLElement | null = null;
 // Track annotations that couldn't be found on the current page
@@ -841,4 +845,63 @@ function scrollToHighlight(id: string) {
 
   // Start flash after scroll completes
   setTimeout(flash, 300);
+}
+
+/**
+ * Handle OAuth callback URL detection
+ * When Zotero redirects to the callback URL after authorization,
+ * this function detects it and sends the OAuth parameters to the background script
+ */
+function handleOAuthCallback() {
+  // Only check if OAuth is enabled
+  if (!config.features.oauthEnabled) {
+    return;
+  }
+
+  const currentUrl = window.location.href;
+  const callbackUrl = config.oauth.callbackUrl;
+
+  // Check if current URL is the OAuth callback
+  if (currentUrl.startsWith(callbackUrl + '?')) {
+    console.log('Webtero: OAuth callback detected');
+
+    // Extract query string
+    const queryString = currentUrl.substring(callbackUrl.length + 1);
+
+    // Send to background script
+    browser.runtime
+      .sendMessage({
+        type: 'OAUTH_CALLBACK',
+        data: { queryString },
+      })
+      .then((response) => {
+        if (response?.success) {
+          console.log('Webtero: OAuth callback processed successfully');
+          // Show success message on the page
+          document.body.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: system-ui, sans-serif;">
+              <h1 style="color: #4caf50; margin-bottom: 1rem;">Authorization Successful</h1>
+              <p style="color: #666;">You can close this window and return to Webtero.</p>
+              <p style="color: #999; font-size: 0.875rem; margin-top: 2rem;">This window will close automatically...</p>
+            </div>
+          `;
+          // Try to close the window after a short delay
+          setTimeout(() => {
+            window.close();
+          }, 2000);
+        } else {
+          console.error('Webtero: OAuth callback failed:', response?.error);
+          document.body.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: system-ui, sans-serif;">
+              <h1 style="color: #c62828; margin-bottom: 1rem;">Authorization Failed</h1>
+              <p style="color: #666;">${response?.error || 'Unknown error occurred'}</p>
+              <p style="color: #999; font-size: 0.875rem; margin-top: 2rem;">Please close this window and try again.</p>
+            </div>
+          `;
+        }
+      })
+      .catch((error) => {
+        console.error('Webtero: Failed to send OAuth callback:', error);
+      });
+  }
 }

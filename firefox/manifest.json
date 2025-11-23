@@ -7,11 +7,13 @@
     "storage",
     "activeTab",
     "tabs",
-    "scripting"
+    "scripting",
+    "identity"
   ],
   "host_permissions": [
     "http://127.0.0.1:23119/*",
-    "https://api.zotero.org/*"
+    "https://api.zotero.org/*",
+    "https://www.zotero.org/*"
   ],
   "background": {
     "scripts": ["background/background.js"],
