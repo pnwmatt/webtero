@@ -96,6 +96,25 @@ export interface AutoSaveTab {
   enabled: boolean;
 }
 
+/**
+ * An annotation queued for upload while waiting for the page to be saved
+ */
+export interface OutboxAnnotation {
+  id: string;
+  pageUrl: string;
+  text: string;
+  comment?: string;
+  color: HighlightColor;
+  position: {
+    xpath: string;
+    offset: number;
+    length: number;
+  };
+  created: string;
+  status: 'pending' | 'saving_page' | 'saving_annotation' | 'failed';
+  error?: string;
+}
+
 export interface StorageData {
   auth?: AuthData;
   pages: Record<string, SavedPage>;
@@ -108,6 +127,8 @@ export interface StorageData {
   pageLinks: Record<string, PageLink>;
   // Tabs with auto-save enabled (keyed by tab ID)
   autoSaveTabs: Record<number, AutoSaveTab>;
+  // Annotations queued for upload (keyed by annotation ID)
+  outboxAnnotations: Record<string, OutboxAnnotation>;
 }
 
 // Zotero API types
@@ -209,7 +230,12 @@ export type MessageType =
   | 'CHECK_AUTO_SAVE'
   | 'LINK_CLICKED'
   | 'GET_PAGE_LINKS'
-  | 'GET_SAVED_URLS';
+  | 'GET_SAVED_URLS'
+  // Annotation outbox
+  | 'QUEUE_ANNOTATION'
+  | 'GET_OUTBOX_ANNOTATIONS'
+  | 'RETRY_OUTBOX_ANNOTATION'
+  | 'DELETE_OUTBOX_ANNOTATION';
 
 export interface Message {
   type: MessageType;

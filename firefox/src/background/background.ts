@@ -1,4 +1,4 @@
-import type { Message, MessageResponse } from '../lib/types';
+import type { Message, MessageResponse, OutboxAnnotation, HighlightColor } from '../lib/types';
 import { storage } from '../lib/storage';
 import { zoteroAPI } from '../lib/zotero-api';
 import { generateId, normalizeUrl, md5 } from '../lib/utils';
@@ -126,6 +126,35 @@ browser.runtime.onMessage.addListener(
 
         case 'GET_SAVED_URLS':
           return await handleGetSavedUrls();
+
+        // Annotation outbox handlers
+        case 'QUEUE_ANNOTATION':
+          return await handleQueueAnnotation(
+            message.data as {
+              url: string;
+              title: string;
+              text: string;
+              comment?: string;
+              color: string;
+              position: { xpath: string; offset: number; length: number };
+              collections?: string[];
+            }
+          );
+
+        case 'GET_OUTBOX_ANNOTATIONS':
+          return await handleGetOutboxAnnotations(
+            message.data as { url: string }
+          );
+
+        case 'RETRY_OUTBOX_ANNOTATION':
+          return await handleRetryOutboxAnnotation(
+            message.data as { id: string; title: string; collections?: string[] }
+          );
+
+        case 'DELETE_OUTBOX_ANNOTATION':
+          return await handleDeleteOutboxAnnotation(
+            message.data as { id: string }
+          );
 
         default:
           return { success: false, error: 'Unknown message type' };
@@ -925,23 +954,33 @@ async function handleGetPageLinks(data: {
 }
 
 /**
- * Get all saved URLs with their item keys and read percentages
+ * Get all saved URLs with their item keys, read percentages, and annotation colors
  * Used by content script to mark links on the page
  */
 async function handleGetSavedUrls(): Promise<MessageResponse> {
   const pages = await storage.getAllPages();
+  const allAnnotations = await storage.getAllAnnotations();
   const savedUrls: Array<{
     url: string;
     itemKey: string;
     readPercentage: number;
+    annotationColors: string[];
   }> = [];
 
   for (const page of Object.values(pages)) {
     const percentage = await storage.getReadPercentage(page.zoteroItemKey);
+
+    // Get annotation colors for this page
+    const pageAnnotations = Object.values(allAnnotations).filter(
+      (ann) => ann.pageUrl === page.url
+    );
+    const annotationColors = pageAnnotations.map((ann) => ann.color);
+
     savedUrls.push({
       url: page.url,
       itemKey: page.zoteroItemKey,
       readPercentage: percentage,
+      annotationColors,
     });
   }
 
@@ -952,3 +991,201 @@ async function handleGetSavedUrls(): Promise<MessageResponse> {
 browser.tabs.onRemoved.addListener(async (tabId) => {
   await storage.deleteAutoSaveTab(tabId);
 });
+
+// ============================================
+// Annotation Outbox Handlers
+// ============================================
+
+/**
+ * Queue an annotation for a page that may not be saved yet
+ * If the page isn't saved, this triggers saving it first
+ */
+async function handleQueueAnnotation(data: {
+  url: string;
+  title: string;
+  text: string;
+  comment?: string;
+  color: string;
+  position: { xpath: string; offset: number; length: number };
+  collections?: string[];
+}): Promise<MessageResponse> {
+  const normalizedUrl = normalizeUrl(data.url);
+
+  // Check if page is already saved
+  const existingPage = await storage.getPage(normalizedUrl);
+
+  if (existingPage) {
+    // Page already saved, create annotation directly
+    return await handleCreateAnnotation({
+      url: data.url,
+      text: data.text,
+      comment: data.comment,
+      color: data.color,
+      position: data.position,
+    });
+  }
+
+  // Page not saved - queue the annotation and start page save
+  const outboxAnnotation: OutboxAnnotation = {
+    id: generateId(),
+    pageUrl: normalizedUrl,
+    text: data.text,
+    comment: data.comment,
+    color: data.color as HighlightColor,
+    position: data.position,
+    created: new Date().toISOString(),
+    status: 'saving_page',
+  };
+
+  await storage.saveOutboxAnnotation(outboxAnnotation);
+
+  // Notify sidebar of the queued annotation
+  browser.runtime.sendMessage({
+    type: 'OUTBOX_ANNOTATION_ADDED',
+    data: outboxAnnotation,
+  }).catch(() => {
+    // Sidebar may not be open
+  });
+
+  // Start saving the page in the background
+  processOutboxAnnotation(outboxAnnotation.id, data.title, data.collections);
+
+  return {
+    success: true,
+    data: { queued: true, annotation: outboxAnnotation },
+  };
+}
+
+/**
+ * Process a queued annotation: save page, then create annotation
+ */
+async function processOutboxAnnotation(
+  annotationId: string,
+  pageTitle: string,
+  collections?: string[]
+): Promise<void> {
+  const outboxAnnotation = await storage.getOutboxAnnotation(annotationId);
+  if (!outboxAnnotation) return;
+
+  try {
+    // Save the page first
+    const saveResult = await handleSavePage({
+      url: outboxAnnotation.pageUrl,
+      title: pageTitle,
+      collections,
+    });
+
+    if (!saveResult.success) {
+      await storage.updateOutboxAnnotationStatus(
+        annotationId,
+        'failed',
+        saveResult.error || 'Failed to save page'
+      );
+      notifyOutboxUpdate(annotationId);
+      return;
+    }
+
+    // Page saved, now create the annotation
+    await storage.updateOutboxAnnotationStatus(annotationId, 'saving_annotation');
+    notifyOutboxUpdate(annotationId);
+
+    const annotationResult = await handleCreateAnnotation({
+      url: outboxAnnotation.pageUrl,
+      text: outboxAnnotation.text,
+      comment: outboxAnnotation.comment,
+      color: outboxAnnotation.color,
+      position: outboxAnnotation.position,
+    });
+
+    if (!annotationResult.success) {
+      await storage.updateOutboxAnnotationStatus(
+        annotationId,
+        'failed',
+        annotationResult.error || 'Failed to create annotation'
+      );
+      notifyOutboxUpdate(annotationId);
+      return;
+    }
+
+    // Success - remove from outbox
+    await storage.deleteOutboxAnnotation(annotationId);
+
+    // Notify sidebar that outbox item was processed
+    browser.runtime.sendMessage({
+      type: 'OUTBOX_ANNOTATION_COMPLETED',
+      data: { id: annotationId, annotation: annotationResult.data },
+    }).catch(() => {});
+
+  } catch (error) {
+    console.error('Failed to process outbox annotation:', error);
+    await storage.updateOutboxAnnotationStatus(
+      annotationId,
+      'failed',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+    notifyOutboxUpdate(annotationId);
+  }
+}
+
+/**
+ * Notify sidebar of outbox annotation status change
+ */
+function notifyOutboxUpdate(annotationId: string): void {
+  storage.getOutboxAnnotation(annotationId).then((annotation) => {
+    if (annotation) {
+      browser.runtime.sendMessage({
+        type: 'OUTBOX_ANNOTATION_UPDATED',
+        data: annotation,
+      }).catch(() => {});
+    }
+  });
+}
+
+/**
+ * Get all outbox annotations for a page
+ */
+async function handleGetOutboxAnnotations(data: {
+  url: string;
+}): Promise<MessageResponse> {
+  const normalizedUrl = normalizeUrl(data.url);
+  const outboxAnnotations = await storage.getOutboxAnnotationsByPage(normalizedUrl);
+  return { success: true, data: outboxAnnotations };
+}
+
+/**
+ * Retry a failed outbox annotation
+ */
+async function handleRetryOutboxAnnotation(data: {
+  id: string;
+  title: string;
+  collections?: string[];
+}): Promise<MessageResponse> {
+  const annotation = await storage.getOutboxAnnotation(data.id);
+  if (!annotation) {
+    return { success: false, error: 'Outbox annotation not found' };
+  }
+
+  // Reset status and retry
+  await storage.updateOutboxAnnotationStatus(data.id, 'saving_page');
+  notifyOutboxUpdate(data.id);
+
+  processOutboxAnnotation(data.id, data.title, data.collections);
+
+  return { success: true };
+}
+
+/**
+ * Delete an outbox annotation (cancel pending upload)
+ */
+async function handleDeleteOutboxAnnotation(data: {
+  id: string;
+}): Promise<MessageResponse> {
+  await storage.deleteOutboxAnnotation(data.id);
+
+  browser.runtime.sendMessage({
+    type: 'OUTBOX_ANNOTATION_DELETED',
+    data: { id: data.id },
+  }).catch(() => {});
+
+  return { success: true };
+}

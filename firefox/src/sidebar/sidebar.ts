@@ -1,4 +1,4 @@
-import type { SavedPage, Annotation, Project, Snapshot } from '../lib/types';
+import type { SavedPage, Annotation, Project, Snapshot, OutboxAnnotation } from '../lib/types';
 import { storage } from '../lib/storage';
 import { formatDate } from '../lib/utils';
 import { config } from '../lib/config';
@@ -40,6 +40,7 @@ let currentTab: browser.tabs.Tab | null = null;
 let currentPage: SavedPage | null = null;
 let currentSnapshots: Snapshot[] = [];
 let currentAnnotations: Annotation[] = [];
+let currentOutboxAnnotations: OutboxAnnotation[] = [];
 let showingAllAnnotations = false;
 let pageLoadTime: Date = new Date();
 let liveVersionTimer: ReturnType<typeof setInterval> | null = null;
@@ -145,6 +146,14 @@ async function loadPageData() {
       currentSnapshots = response.data.snapshots || [];
       currentAnnotations = response.data.annotations || [];
       showingAllAnnotations = false;
+
+      // Load outbox annotations for this page
+      const outboxResponse = await browser.runtime.sendMessage({
+        type: 'GET_OUTBOX_ANNOTATIONS',
+        data: { url: currentTab.url },
+      });
+      currentOutboxAnnotations = outboxResponse.success ? outboxResponse.data : [];
+
       await displayPageStatus();
 
       // Query content script for which annotations couldn't be found
@@ -166,7 +175,7 @@ async function loadPageData() {
         }
       }
 
-      displayAnnotations(currentAnnotations);
+      displayAnnotations(currentAnnotations, currentOutboxAnnotations);
 
       // Load links for this page
       loadLinks();
@@ -445,17 +454,26 @@ savePageBtn.addEventListener('click', async () => {
 });
 
 // Display annotations (zotero-reader style)
-function displayAnnotations(annotations: Annotation[]) {
-  if (annotations.length === 0) {
+function displayAnnotations(annotations: Annotation[], outboxAnnotations: OutboxAnnotation[] = []) {
+  if (annotations.length === 0 && outboxAnnotations.length === 0) {
     annotationsList.innerHTML =
       '<p class="empty">No annotations yet. Highlight text on the page to create one.</p>';
     return;
   }
 
-  annotationsList.innerHTML = annotations
+  // Render outbox annotations first (they're pending)
+  const outboxHtml = outboxAnnotations
+    .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
+    .map((ann) => renderOutboxAnnotation(ann))
+    .join('');
+
+  // Then render saved annotations
+  const savedHtml = annotations
     .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
     .map((ann) => renderAnnotation(ann))
     .join('');
+
+  annotationsList.innerHTML = outboxHtml + savedHtml;
 
   // Add delete handlers
   document.querySelectorAll('.delete-annotation').forEach((btn) => {
@@ -484,6 +502,27 @@ function displayAnnotations(annotations: Annotation[]) {
         } catch (error) {
           console.error('Failed to scroll to highlight:', error);
         }
+      }
+    });
+  });
+
+  // Add outbox annotation handlers
+  document.querySelectorAll('.delete-outbox').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = (e.target as HTMLElement).dataset.id;
+      if (id) {
+        await deleteOutboxAnnotation(id);
+      }
+    });
+  });
+
+  document.querySelectorAll('.retry-outbox').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = (e.target as HTMLElement).dataset.id;
+      if (id) {
+        await retryOutboxAnnotation(id);
       }
     });
   });
@@ -522,6 +561,56 @@ function renderAnnotation(ann: Annotation): string {
   `;
 }
 
+// Render an outbox annotation (pending upload)
+function renderOutboxAnnotation(ann: OutboxAnnotation): string {
+  const color = ann.color || 'yellow';
+  const statusText = getOutboxStatusText(ann.status);
+  const statusClass = ann.status === 'failed' ? 'outbox-failed' : 'outbox-pending';
+  const errorHtml = ann.error
+    ? `<div class="annotation-warning">&#9888; ${escapeHtml(ann.error)}</div>`
+    : '';
+
+  return `
+    <div class="annotation outbox-annotation ${statusClass}" data-outbox-id="${ann.id}" data-color="${color}">
+      <div class="annotation-header">
+        <div class="start">
+          <span class="annotation-icon">${HIGHLIGHT_ICON}</span>
+          <span class="outbox-status">${statusText}</span>
+        </div>
+        <div class="end">
+          ${ann.status === 'failed' ? `<button class="retry-outbox" data-id="${ann.id}" title="Retry">&#8635;</button>` : ''}
+          <button class="delete-outbox" data-id="${ann.id}" title="Cancel">&#215;</button>
+        </div>
+      </div>
+      ${errorHtml}
+      <div class="annotation-text">
+        <div class="blockquote-border"></div>
+        <div class="content">${escapeHtml(ann.text)}</div>
+      </div>
+      ${ann.comment ? `<div class="annotation-comment">${escapeHtml(ann.comment)}</div>` : ''}
+      <div class="annotation-meta">
+        <span>${formatDate(ann.created)}</span>
+      </div>
+    </div>
+  `;
+}
+
+// Get human-readable status text for outbox annotation
+function getOutboxStatusText(status: OutboxAnnotation['status']): string {
+  switch (status) {
+    case 'pending':
+      return 'Pending...';
+    case 'saving_page':
+      return 'Saving page...';
+    case 'saving_annotation':
+      return 'Saving annotation...';
+    case 'failed':
+      return 'Failed';
+    default:
+      return 'Pending...';
+  }
+}
+
 // Delete annotation
 async function deleteAnnotation(id: string) {
   try {
@@ -538,6 +627,48 @@ async function deleteAnnotation(id: string) {
   } catch (error) {
     console.error('Failed to delete annotation:', error);
     alert('Failed to delete annotation');
+  }
+}
+
+// Delete outbox annotation (cancel pending upload)
+async function deleteOutboxAnnotation(id: string) {
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'DELETE_OUTBOX_ANNOTATION',
+      data: { id },
+    });
+
+    if (response.success) {
+      await loadPageData();
+    } else {
+      alert(`Failed to cancel: ${response.error}`);
+    }
+  } catch (error) {
+    console.error('Failed to delete outbox annotation:', error);
+  }
+}
+
+// Retry failed outbox annotation
+async function retryOutboxAnnotation(id: string) {
+  if (!currentTab?.title) return;
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'RETRY_OUTBOX_ANNOTATION',
+      data: {
+        id,
+        title: currentTab.title,
+        collections: projectDropdown.value ? [projectDropdown.value] : [],
+      },
+    });
+
+    if (response.success) {
+      await loadPageData();
+    } else {
+      alert(`Failed to retry: ${response.error}`);
+    }
+  } catch (error) {
+    console.error('Failed to retry outbox annotation:', error);
   }
 }
 
@@ -943,6 +1074,16 @@ browser.runtime.onMessage.addListener((message) => {
     message.type === 'ANNOTATION_CREATED' ||
     message.type === 'ANNOTATION_DELETED' ||
     message.type === 'ANNOTATION_UPDATED'
+  ) {
+    loadPageData();
+  }
+
+  // Listen for outbox annotation updates
+  if (
+    message.type === 'OUTBOX_ANNOTATION_ADDED' ||
+    message.type === 'OUTBOX_ANNOTATION_UPDATED' ||
+    message.type === 'OUTBOX_ANNOTATION_COMPLETED' ||
+    message.type === 'OUTBOX_ANNOTATION_DELETED'
   ) {
     loadPageData();
   }

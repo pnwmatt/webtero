@@ -7,6 +7,7 @@ import type {
   PageFocusSession,
   PageLink,
   AutoSaveTab,
+  OutboxAnnotation,
 } from './types';
 
 /**
@@ -267,6 +268,49 @@ class Storage {
     if (tabs && tabs[tabId]) {
       delete tabs[tabId];
       await this.set('autoSaveTabs', tabs);
+    }
+  }
+
+  // Outbox Annotation operations
+  async getOutboxAnnotation(id: string): Promise<OutboxAnnotation | undefined> {
+    const outbox = await this.get('outboxAnnotations');
+    return outbox?.[id];
+  }
+
+  async getOutboxAnnotationsByPage(url: string): Promise<OutboxAnnotation[]> {
+    const outbox = await this.get('outboxAnnotations');
+    if (!outbox) return [];
+    return Object.values(outbox).filter((ann) => ann.pageUrl === url);
+  }
+
+  async getAllOutboxAnnotations(): Promise<Record<string, OutboxAnnotation>> {
+    return (await this.get('outboxAnnotations')) ?? {};
+  }
+
+  async saveOutboxAnnotation(annotation: OutboxAnnotation): Promise<void> {
+    const outbox = (await this.get('outboxAnnotations')) ?? {};
+    outbox[annotation.id] = annotation;
+    await this.set('outboxAnnotations', outbox);
+  }
+
+  async deleteOutboxAnnotation(id: string): Promise<void> {
+    const outbox = await this.get('outboxAnnotations');
+    if (outbox && outbox[id]) {
+      delete outbox[id];
+      await this.set('outboxAnnotations', outbox);
+    }
+  }
+
+  async updateOutboxAnnotationStatus(
+    id: string,
+    status: OutboxAnnotation['status'],
+    error?: string
+  ): Promise<void> {
+    const outbox = await this.get('outboxAnnotations');
+    if (outbox && outbox[id]) {
+      outbox[id].status = status;
+      outbox[id].error = error;
+      await this.set('outboxAnnotations', outbox);
     }
   }
 

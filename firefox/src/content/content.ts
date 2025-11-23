@@ -156,6 +156,7 @@ interface SavedUrlInfo {
   url: string;
   itemKey: string;
   readPercentage: number;
+  annotationColors: string[];
 }
 
 let savedUrls: SavedUrlInfo[] = [];
@@ -191,7 +192,7 @@ function addLinkIndicators() {
 
     // Skip if link points to current page
     if (normalizedHref === currentPageUrl) return;
-    console.log('Webtero: Checking link for indicator:', normalizedHref, currentPageUrl);
+
     const savedInfo = savedUrlMap.get(normalizedHref);
 
     if (savedInfo) {
@@ -199,19 +200,50 @@ function addLinkIndicators() {
       if (!link.querySelector('.webtero-link-indicator')) {
         const indicator = document.createElement('sup');
         indicator.className = 'webtero-link-indicator';
-        indicator.textContent = `[wt ${savedInfo.readPercentage}%]`;
-        indicator.title = `Saved to Webtero - ${savedInfo.readPercentage}% read`;
         indicator.style.cssText =
-          'font-size: 0.7em; color: #666; margin-left: 2px; font-weight: normal; text-decoration: none;';
+          'font-size: 0.7em; color: #666; margin-left: 2px; font-weight: normal; text-decoration: none; display: inline-flex; align-items: center; vertical-align: super;';
+
+        // Build indicator content with colored blocks
+        const colorBlocks = buildAnnotationColorBlocks(savedInfo.annotationColors);
+        indicator.innerHTML = `[wt${colorBlocks}${savedInfo.readPercentage}%]`;
+        indicator.title = buildIndicatorTooltip(savedInfo);
+
         link.appendChild(indicator);
       } else {
         // Update existing indicator
         const indicator = link.querySelector('.webtero-link-indicator') as HTMLElement;
-        indicator.textContent = `[wt ${savedInfo.readPercentage}%]`;
-        indicator.title = `Saved to Webtero - ${savedInfo.readPercentage}% read`;
+        const colorBlocks = buildAnnotationColorBlocks(savedInfo.annotationColors);
+        indicator.innerHTML = `[wt${colorBlocks}${savedInfo.readPercentage}%]`;
+        indicator.title = buildIndicatorTooltip(savedInfo);
       }
     }
   });
+}
+
+/**
+ * Build HTML for annotation color blocks
+ */
+function buildAnnotationColorBlocks(colors: string[]): string {
+  if (colors.length === 0) return ' ';
+
+  // Create small colored blocks for each annotation
+  const blocks = colors.map((color) => {
+    const bgColor = getColorValue(color as HighlightColor);
+    return `<span style="display:inline-block;width:3px;height:0.9em;background:${bgColor};margin:0 0.5px;border-radius:1px;"></span>`;
+  }).join('');
+
+  return ` ${blocks} `;
+}
+
+/**
+ * Build tooltip text for link indicator
+ */
+function buildIndicatorTooltip(info: SavedUrlInfo): string {
+  const parts = [`Saved to Webtero - ${info.readPercentage}% read`];
+  if (info.annotationColors.length > 0) {
+    parts.push(`${info.annotationColors.length} annotation${info.annotationColors.length === 1 ? '' : 's'}`);
+  }
+  return parts.join('\n');
 }
 
 /**
@@ -589,15 +621,17 @@ function handleTextSelection() {
 
 /**
  * Create a highlight
+ * Uses QUEUE_ANNOTATION which will auto-save the page if needed
  */
 async function createHighlight(color: HighlightColor, comment?: string) {
   if (!currentSelection) return;
 
   try {
     const response = await browser.runtime.sendMessage({
-      type: 'CREATE_ANNOTATION',
+      type: 'QUEUE_ANNOTATION',
       data: {
         url: window.location.href,
+        title: document.title,
         text: currentSelection.text,
         comment,
         color,
@@ -610,8 +644,24 @@ async function createHighlight(color: HighlightColor, comment?: string) {
     });
 
     if (response.success) {
+      const annotationData = response.data.queued
+        ? response.data.annotation
+        : response.data;
+
       // Apply visual highlight
-      applyVisualHighlight(currentSelection.range, color, response.data.id);
+      applyVisualHighlight(currentSelection.range, color, annotationData.id);
+
+      // If queued, add a pending indicator
+      if (response.data.queued) {
+        const highlight = document.querySelector(
+          `.webtero-highlight[data-highlight-id="${annotationData.id}"]`
+        ) as HTMLElement;
+        if (highlight) {
+          highlight.classList.add('webtero-highlight-pending');
+          highlight.dataset.pending = 'true';
+        }
+      }
+
       hideHighlightToolbar();
       window.getSelection()?.removeAllRanges();
       currentSelection = null;
@@ -620,7 +670,7 @@ async function createHighlight(color: HighlightColor, comment?: string) {
     }
   } catch (error) {
     console.error('Failed to create highlight:', error);
-    alert('Failed to create highlight. Make sure the page is saved to Zotero first.');
+    alert('Failed to create highlight.');
   }
 }
 
@@ -1129,6 +1179,36 @@ browser.runtime.onMessage.addListener((message, sender) => {
 
   if (message.type === 'REFRESH_LINK_INDICATORS') {
     loadSavedUrlsAndIndicators();
+    return Promise.resolve({ success: true });
+  }
+
+  // Outbox annotation updates
+  if (message.type === 'OUTBOX_ANNOTATION_COMPLETED') {
+    const { id, annotation } = message.data;
+    // Remove pending state from the highlight
+    const highlight = document.querySelector(
+      `.webtero-highlight[data-highlight-id="${id}"]`
+    ) as HTMLElement;
+    if (highlight) {
+      highlight.classList.remove('webtero-highlight-pending');
+      delete highlight.dataset.pending;
+      // Update the highlight ID to the final annotation ID
+      if (annotation?.id) {
+        highlight.dataset.highlightId = annotation.id;
+      }
+    }
+    return Promise.resolve({ success: true });
+  }
+
+  if (message.type === 'OUTBOX_ANNOTATION_UPDATED') {
+    const annotation = message.data;
+    const highlight = document.querySelector(
+      `.webtero-highlight[data-highlight-id="${annotation.id}"]`
+    ) as HTMLElement;
+    if (highlight && annotation.status === 'failed') {
+      highlight.classList.add('webtero-highlight-failed');
+      highlight.title = `Failed: ${annotation.error || 'Unknown error'}`;
+    }
     return Promise.resolve({ success: true });
   }
 
