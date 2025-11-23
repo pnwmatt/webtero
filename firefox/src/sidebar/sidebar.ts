@@ -117,6 +117,7 @@ async function loadPageData() {
 
   // Check if on restricted page
   if (isRestrictedUrl(currentTab.url)) {
+    pageStatus.style.display = 'block';
     pageStatus.innerHTML = '<p class="empty">Webtero is not available on this site.</p>';
     pageActions.style.display = 'none';
     savePageBtn.disabled = true;
@@ -125,6 +126,10 @@ async function loadPageData() {
 
   // Check if on Zotero reader page
   handleZoteroReaderPage(currentTab.url);
+
+  // Re-enable save button and show page actions (may have been disabled by restricted URL)
+  pageActions.style.display = 'block';
+  savePageBtn.disabled = false;
 
   try {
     const response = await browser.runtime.sendMessage({
@@ -353,6 +358,9 @@ function buildHierarchicalProjectList(projects: Project[]): Project[] {
 
 // Load projects into dropdown
 async function loadProjectsForDropdown() {
+  // Preserve current selection
+  const previousValue = projectDropdown.value;
+
   const projects = await storage.getAllProjects();
   const projectsArray = Object.values(projects);
 
@@ -366,12 +374,17 @@ async function loadProjectsForDropdown() {
 
   projectDropdown.innerHTML =
     '<option value="">My Library (no project)</option>' +
-  sortedProjects
+    sortedProjects
       .map(
         (p) =>
           `<option value="${p.id}">${p.parentId ? '\u00A0\u00A0' : ''}${escapeHtml(p.name)}</option>`
       )
       .join('');
+
+  // Restore previous selection if it still exists
+  if (previousValue && projectDropdown.querySelector(`option[value="${previousValue}"]`)) {
+    projectDropdown.value = previousValue;
+  }
 }
 
 // Save page

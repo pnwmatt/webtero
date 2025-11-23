@@ -289,7 +289,7 @@ body {
 
 /* Section content - scrollable and resizable */
 .section-content {
-  padding: 0 1rem 1rem 1rem;
+  padding: 1px 1rem 1rem 1rem;
   overflow-y: auto;
   resize: vertical;
   min-height: 50px;
