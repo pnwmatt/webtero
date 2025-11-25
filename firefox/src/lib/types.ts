@@ -131,11 +131,14 @@ export interface Settings {
   linkIndicatorsEnabled: boolean;
   // Track and display reading progress
   readingProgressEnabled: boolean;
+  // Auto-save pages when clicking links from saved pages
+  autoSaveEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   linkIndicatorsEnabled: true,
   readingProgressEnabled: true,
+  autoSaveEnabled: true,
 };
 
 export interface StorageData {

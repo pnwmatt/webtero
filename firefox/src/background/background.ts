@@ -121,7 +121,8 @@ browser.runtime.onMessage.addListener(
 
         case 'CHECK_AUTO_SAVE':
           return await handleCheckAutoSave(
-            message.data as { tabId: number }
+            message.data as { tabId: number },
+            sender
           );
 
         case 'LINK_CLICKED':
@@ -866,10 +867,17 @@ async function handleDisableAutoSave(data: {
 /**
  * Check if auto-save is enabled for a tab
  */
-async function handleCheckAutoSave(data: {
-  tabId: number;
-}): Promise<MessageResponse> {
-  const tab = await storage.getAutoSaveTab(data.tabId);
+async function handleCheckAutoSave(
+  data: { tabId: number },
+  sender: browser.runtime.MessageSender
+): Promise<MessageResponse> {
+  // Get tab ID from sender (content script sends -1)
+  const tabId = sender.tab?.id ?? data.tabId;
+  if (tabId === undefined || tabId < 0) {
+    return { success: false, error: 'Could not determine tab ID' };
+  }
+
+  const tab = await storage.getAutoSaveTab(tabId);
   return {
     success: true,
     data: {
@@ -883,11 +891,18 @@ async function handleCheckAutoSave(data: {
 /**
  * Handle a link click from a page with auto-save enabled
  * Auto-saves the target page and creates a link record
+ * Uses the same queue logic as annotation saving to avoid duplicate saves
  */
 async function handleLinkClicked(
   data: { tabId: number; targetUrl: string },
   sender: browser.runtime.MessageSender
 ): Promise<MessageResponse> {
+  // Check if auto-save is enabled in settings
+  const settings = await storage.getSettings();
+  if (!settings.autoSaveEnabled) {
+    return { success: false, error: 'Auto-save is disabled in settings' };
+  }
+
   // Get tab ID from sender (content script sends -1)
   const tabId = sender.tab?.id ?? data.tabId;
   if (tabId === undefined || tabId < 0) {
@@ -904,21 +919,38 @@ async function handleLinkClicked(
   // Check if target page is already saved
   let targetPage = await storage.getPage(targetUrl);
 
-  // If not saved, save it now
+  // If not saved, save it now (using the same queue logic as annotations)
   if (!targetPage) {
-    // We need to wait for the page to load to get the title
-    // For now, use the URL as title - content script will update after load
-    const result = await handleSavePage({
-      url: targetUrl,
-      title: targetUrl, // Will be updated by content script
-      collections: [], // Use same collections as source? TBD
-    });
+    // Check if a save is already in progress for this URL
+    const existingSavePromise = savesInProgress.get(targetUrl);
+    if (existingSavePromise) {
+      // Wait for the existing save to complete
+      await existingSavePromise;
+      targetPage = await storage.getPage(targetUrl);
+    } else {
+      // Start a new save and track it
+      const savePromise = (async () => {
+        const result = await handleSavePage({
+          url: targetUrl,
+          title: targetUrl, // Will be updated by content script
+          collections: [], // Use same collections as source? TBD
+        });
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to save page');
+        }
+      })();
 
-    if (!result.success) {
-      return result;
+      savesInProgress.set(targetUrl, savePromise);
+
+      try {
+        await savePromise;
+        targetPage = await storage.getPage(targetUrl);
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Failed to save page' };
+      } finally {
+        savesInProgress.delete(targetUrl);
+      }
     }
-
-    targetPage = await storage.getPage(targetUrl);
   }
 
   if (targetPage) {

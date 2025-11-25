@@ -10,6 +10,7 @@ const syncProjectsBtn = document.getElementById('syncProjectsBtn') as HTMLButton
 const syncStatus = document.getElementById('syncStatus') as HTMLDivElement;
 const linkIndicatorsCheckbox = document.getElementById('linkIndicatorsEnabled') as HTMLInputElement;
 const readingProgressCheckbox = document.getElementById('readingProgressEnabled') as HTMLInputElement;
+const autoSaveCheckbox = document.getElementById('autoSaveEnabled') as HTMLInputElement;
 const oauthSignInBtn = document.getElementById('oauthSignInBtn') as HTMLButtonElement;
 const oauthError = document.getElementById('oauthError') as HTMLParagraphElement;
 
@@ -28,6 +29,7 @@ async function loadSettings() {
   const settings = await storage.getSettings();
   linkIndicatorsCheckbox.checked = settings.linkIndicatorsEnabled;
   readingProgressCheckbox.checked = settings.readingProgressEnabled;
+  autoSaveCheckbox.checked = settings.autoSaveEnabled;
 }
 
 // Show status message
@@ -131,6 +133,16 @@ readingProgressCheckbox.addEventListener('change', async () => {
     });
   } catch (error) {
     console.error('Failed to save reading progress setting:', error);
+  }
+});
+
+autoSaveCheckbox.addEventListener('change', async () => {
+  try {
+    await storage.updateSettings({
+      autoSaveEnabled: autoSaveCheckbox.checked,
+    });
+  } catch (error) {
+    console.error('Failed to save auto-save setting:', error);
   }
 });
 

@@ -311,6 +311,19 @@ body {
   margin-right: 0.5rem;
 }
 
+/* Auto-save icon (sync arrows) */
+.auto-save-icon {
+  color: var(--accent-blue50);
+  font-weight: bold;
+  font-size: 1rem;
+  margin-right: 0.5rem;
+}
+
+/* When savedIcon is hidden, autoSaveIcon should take margin-left: auto */
+.saved-icon[style*="display: none"] + .auto-save-icon {
+  margin-left: auto;
+}
+
 /* Section content */
 .section-content {
   padding: 1px 1rem 1rem 1rem;

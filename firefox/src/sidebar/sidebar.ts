@@ -22,6 +22,7 @@ const savedInfo = document.getElementById('savedInfo') as HTMLDivElement;
 const savedDate = document.getElementById('savedDate') as HTMLParagraphElement;
 const savedProject = document.getElementById('savedProject') as HTMLParagraphElement;
 const savedIcon = document.getElementById('savedIcon') as HTMLSpanElement;
+const autoSaveIcon = document.getElementById('autoSaveIcon') as HTMLSpanElement;
 const projectDropdown = document.getElementById('projectDropdown') as HTMLSelectElement;
 const savePageBtn = document.getElementById('savePageBtn') as HTMLButtonElement;
 const annotationsList = document.getElementById('annotationsList') as HTMLDivElement;
@@ -281,6 +282,23 @@ async function displayPageStatus() {
     savePageBtn.disabled = false;
     savePageBtn.textContent = 'Save';
   }
+
+  // Check if auto-save is enabled for this tab
+  let isAutoSaveEnabled = false;
+  if (currentTab?.id && cachedSettings.autoSaveEnabled) {
+    try {
+      const autoSaveResponse = await browser.runtime.sendMessage({
+        type: 'CHECK_AUTO_SAVE',
+        data: { tabId: currentTab.id },
+      });
+      isAutoSaveEnabled = autoSaveResponse.success && autoSaveResponse.data?.enabled;
+    } catch {
+      // Ignore errors checking auto-save state
+    }
+  }
+
+  // Show/hide auto-save indicator
+  autoSaveIcon.style.display = isAutoSaveEnabled ? 'inline' : 'none';
 
   if (currentPage) {
     // Show saved state with versions
@@ -1135,11 +1153,18 @@ function escapeHtml(text: string): string {
  */
 async function enableAutoSaveAndTracking(tabId: number, itemKey: string, url: string) {
   try {
-    // Enable auto-save in background
-    await browser.runtime.sendMessage({
-      type: 'ENABLE_AUTO_SAVE',
-      data: { tabId, sourceItemKey: itemKey, sourceUrl: url },
-    });
+    // Enable auto-save in background (only if setting is enabled)
+    if (cachedSettings.autoSaveEnabled) {
+      await browser.runtime.sendMessage({
+        type: 'ENABLE_AUTO_SAVE',
+        data: { tabId, sourceItemKey: itemKey, sourceUrl: url },
+      });
+
+      await browser.tabs.sendMessage(tabId, {
+        type: 'ENABLE_AUTO_SAVE_MODE',
+        data: { itemKey },
+      });
+    }
 
     // Tell content script to start focus tracking (if enabled)
     if (cachedSettings.readingProgressEnabled) {
@@ -1148,11 +1173,6 @@ async function enableAutoSaveAndTracking(tabId: number, itemKey: string, url: st
         data: { itemKey },
       });
     }
-
-    await browser.tabs.sendMessage(tabId, {
-      type: 'ENABLE_AUTO_SAVE_MODE',
-      data: { itemKey },
-    });
 
     // Enable link indicators (if enabled)
     if (cachedSettings.linkIndicatorsEnabled) {
