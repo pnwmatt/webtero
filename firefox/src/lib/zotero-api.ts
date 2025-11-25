@@ -243,29 +243,33 @@ class ZoteroAPI {
     text: string,
     comment?: string,
     color?: string,
-    position?: { xpath: string; offset: number; length: number }
+    position?: { xpath: string; offset: number; length: number; cssSelector?: string; selectorStart?: number; selectorEnd?: number }
   ): Promise<ZoteroAnnotation> {
     const userID = await this.getUserID();
     const headers = await this.getHeaders();
 
     // Build the annotation position for web/snapshot annotations
-    // This uses a selector-based position format similar to EPUB annotations
-    const annotationPosition = position ? JSON.stringify({
-      type: 'FragmentSelector',
-      conformsTo: 'http://www.w3.org/TR/annotation-model/',
-      value: position.xpath,
-      refinedBy: {
-        type: 'TextPositionSelector',
-        start: position.offset,
-        end: position.offset + position.length,
-      },
-    }) : '{}';
+    // Uses CssSelector with a unique selector pointing to the containing element,
+    // refined by TextPositionSelector for the text position within that element.
+    // This matches Zotero Reader's expected format for snapshots.
+    let annotationPosition = '{}';
+    if (position?.cssSelector && position.selectorStart !== undefined && position.selectorEnd !== undefined) {
+      annotationPosition = JSON.stringify({
+        type: 'CssSelector',
+        value: position.cssSelector,
+        refinedBy: {
+          type: 'TextPositionSelector',
+          start: position.selectorStart,
+          end: position.selectorEnd,
+        },
+      });
+    }
 
     // Generate a sort index for HTML/snapshot annotations
     // Format: 7-digit character offset from start of body (e.g., "0001234")
     // This matches Zotero Reader's snapshot-view.ts SORT_INDEX_LENGTH = 7
-    const sortIndex = position
-      ? String(position.offset).padStart(7, '0').substring(0, 7)
+    const sortIndex = position?.selectorStart !== undefined
+      ? String(position.selectorStart).padStart(7, '0').substring(0, 7)
       : '0000000';
 
     const data = {

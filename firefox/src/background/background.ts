@@ -355,7 +355,7 @@ async function handleCreateAnnotation(data: {
   text: string;
   comment?: string;
   color: string;
-  position: { xpath: string; offset: number; length: number };
+  position: { xpath: string; offset: number; length: number; cssSelector?: string; selectorStart?: number; selectorEnd?: number };
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
 
@@ -1039,7 +1039,7 @@ async function handleQueueAnnotation(data: {
   text: string;
   comment?: string;
   color: string;
-  position: { xpath: string; offset: number; length: number };
+  position: { xpath: string; offset: number; length: number; cssSelector?: string; selectorStart?: number; selectorEnd?: number };
   collections?: string[];
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);

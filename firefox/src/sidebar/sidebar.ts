@@ -433,7 +433,7 @@ async function openSnapshotInReader(itemKey: string, snapshotKey: string) {
 
     // Build Web Library reader URL
     // Format: https://www.zotero.org/{username}/items/{itemKey}/attachment/{snapshotKey}/reader
-    const readerUrl = `https://www.zotero.org/users/${auth.username}/items/${itemKey}/attachment/${snapshotKey}/reader`;
+    const readerUrl = `https://www.zotero.org/${auth.username}/items/${itemKey}/attachment/${snapshotKey}/reader`;
     await browser.tabs.create({ url: readerUrl });
   } catch (error) {
     console.error('Failed to open snapshot in reader:', error);

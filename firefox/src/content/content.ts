@@ -484,7 +484,114 @@ let currentSelection: {
   range: Range;
   xpath: string;
   offset: number;
+  // For Zotero Reader compatibility
+  cssSelector: string;
+  selectorStart: number;
+  selectorEnd: number;
 } | null = null;
+
+/**
+ * Generate a CSS selector uniquely pointing to the element, relative to body.
+ * Based on zotero-reader's unique-selector.ts
+ */
+function getUniqueSelectorContaining(element: Element): string | null {
+  const root = element.closest('body');
+  if (!root) {
+    return null;
+  }
+
+  const testSelector = (selector: string) => {
+    return root.querySelectorAll(selector).length === 1 && root.querySelector(selector) === element;
+  };
+
+  let currentElement: Element | null = element;
+  let selector = '';
+  while (currentElement && currentElement !== root) {
+    const joiner = selector ? ' > ' : '';
+    if (currentElement.id) {
+      return `#${CSS.escape(currentElement.id)}` + joiner + selector;
+    }
+
+    const tagName = currentElement.tagName.toLowerCase();
+
+    const prevSibling = currentElement.previousElementSibling;
+    if (prevSibling && prevSibling.id) {
+      const prevSiblingIDSelector = `#${CSS.escape(prevSibling.id)} + ${tagName}${joiner}${selector}`;
+      if (testSelector(prevSiblingIDSelector)) {
+        return prevSiblingIDSelector;
+      }
+    }
+
+    let childPseudoclass;
+    if (currentElement.matches(':only-of-type') || currentElement.matches(':only-child')) {
+      childPseudoclass = '';
+    } else if (currentElement.matches(':first-child')) {
+      childPseudoclass = ':first-child';
+    } else if (currentElement.matches(':first-of-type')) {
+      childPseudoclass = ':first-of-type';
+    } else if (currentElement.matches(':last-child')) {
+      childPseudoclass = ':last-child';
+    } else if (currentElement.matches(':last-of-type')) {
+      childPseudoclass = ':last-of-type';
+    } else if (currentElement.parentElement) {
+      childPseudoclass = `:nth-child(${Array.from(currentElement.parentElement.children).indexOf(currentElement) + 1})`;
+    } else {
+      break;
+    }
+
+    selector = tagName + childPseudoclass + joiner + selector;
+
+    if (testSelector(selector)) {
+      return selector;
+    }
+
+    currentElement = currentElement.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Calculate text position within an element for a range
+ * Returns character offsets across all text nodes within the root element
+ * This matches Zotero Reader's TextPositionSelector format
+ */
+function getTextPositionInElement(range: Range, root: Element): { start: number; end: number } | null {
+  const iter = document.createNodeIterator(root, NodeFilter.SHOW_TEXT);
+  let pos = 0;
+  let start: number | undefined;
+  let end: number | undefined;
+
+  let node: Node | null;
+  while ((node = iter.nextNode())) {
+    if (node === range.startContainer) {
+      start = pos + range.startOffset;
+    }
+    if (node === range.endContainer) {
+      end = pos + range.endOffset;
+    }
+    if (node.nodeValue) {
+      pos += node.nodeValue.length;
+    }
+  }
+
+  if (start === undefined || end === undefined) {
+    return null;
+  }
+  return { start, end };
+}
+
+/**
+ * Find the best container element for the selection
+ * Returns the smallest element that contains the entire selection
+ */
+function getSelectionContainer(range: Range): Element | null {
+  let container = range.commonAncestorContainer;
+  // If the container is a text node, get its parent element
+  if (container.nodeType === Node.TEXT_NODE) {
+    container = container.parentElement as Node;
+  }
+  return container as Element | null;
+}
 let currentEditHighlight: {
   id: string;
   element: HTMLElement | null;  // null when using CSS Highlight API
@@ -897,16 +1004,44 @@ function handleTextSelection() {
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
 
-  // Get XPath and offset
+  // Get XPath and offset (for local highlighting)
   const startNode = range.startContainer;
   const xpath = getXPath(startNode);
   const offset = range.startOffset;
+
+  // Get unique CSS selector and element-relative text position (for Zotero Reader compatibility)
+  const container = getSelectionContainer(range);
+  if (!container) {
+    console.warn('Webtero: Could not find selection container');
+    hideHighlightToolbar();
+    currentSelection = null;
+    return;
+  }
+
+  const cssSelector = getUniqueSelectorContaining(container);
+  if (!cssSelector) {
+    console.warn('Webtero: Could not generate unique CSS selector');
+    hideHighlightToolbar();
+    currentSelection = null;
+    return;
+  }
+
+  const textPosition = getTextPositionInElement(range, container);
+  if (!textPosition) {
+    console.warn('Webtero: Could not calculate text position in element');
+    hideHighlightToolbar();
+    currentSelection = null;
+    return;
+  }
 
   currentSelection = {
     text,
     range: range.cloneRange(),
     xpath,
     offset,
+    cssSelector,
+    selectorStart: textPosition.start,
+    selectorEnd: textPosition.end,
   };
 
   showHighlightToolbar(
@@ -935,6 +1070,9 @@ async function createHighlight(color: HighlightColor, comment?: string) {
           xpath: currentSelection.xpath,
           offset: currentSelection.offset,
           length: currentSelection.text.length,
+          cssSelector: currentSelection.cssSelector,
+          selectorStart: currentSelection.selectorStart,
+          selectorEnd: currentSelection.selectorEnd,
         },
       },
     });

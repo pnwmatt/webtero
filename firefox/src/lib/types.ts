@@ -31,10 +31,14 @@ export interface Annotation {
   comment?: string; // User comment
   color: HighlightColor; // Highlight color
   position: {
-    // DOM position info
+    // DOM position info (for local highlighting)
     xpath: string;
     offset: number;
     length: number;
+    // For Zotero Reader compatibility: unique CSS selector and element-relative text positions
+    cssSelector?: string;
+    selectorStart?: number;
+    selectorEnd?: number;
   };
   created: string;
   notFound?: boolean; // True if annotation couldn't be found on current page
@@ -110,6 +114,9 @@ export interface OutboxAnnotation {
     xpath: string;
     offset: number;
     length: number;
+    cssSelector?: string;
+    selectorStart?: number;
+    selectorEnd?: number;
   };
   created: string;
   status: 'pending' | 'saving_page' | 'saving_annotation' | 'failed';
