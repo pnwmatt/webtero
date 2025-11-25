@@ -7,6 +7,10 @@ import * as zoteroOAuth from '../lib/zotero-oauth';
 
 const LOG_LEVEL = 0;
 
+// Track pages currently being saved (URL -> Promise that resolves when save completes)
+// This prevents multiple saves when annotations are queued rapidly
+const savesInProgress = new Map<string, Promise<void>>();
+
 if (LOG_LEVEL > 0) console.log('Webtero background script loaded');
 
 /**
@@ -884,7 +888,13 @@ async function handleLinkClicked(
   data: { tabId: number; targetUrl: string },
   sender: browser.runtime.MessageSender
 ): Promise<MessageResponse> {
-  const autoSaveTab = await storage.getAutoSaveTab(data.tabId);
+  // Get tab ID from sender (content script sends -1)
+  const tabId = sender.tab?.id ?? data.tabId;
+  if (tabId === undefined || tabId < 0) {
+    return { success: false, error: 'Could not determine tab ID' };
+  }
+
+  const autoSaveTab = await storage.getAutoSaveTab(tabId);
   if (!autoSaveTab?.enabled) {
     return { success: false, error: 'Auto-save not enabled for this tab' };
   }
@@ -1031,7 +1041,10 @@ browser.tabs.onRemoved.addListener(async (tabId) => {
 
 /**
  * Queue an annotation for a page that may not be saved yet
- * If the page isn't saved, this triggers saving it first
+ * Logic:
+ * 1. If page already saved -> attach annotation to latest snapshot
+ * 2. If save in progress -> queue annotation and wait for save to complete
+ * 3. If no snapshot -> start save, queue annotation, attach when complete
  */
 async function handleQueueAnnotation(data: {
   url: string;
@@ -1044,11 +1057,9 @@ async function handleQueueAnnotation(data: {
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
 
-  // Check if page is already saved
+  // Case 3: Page already saved - create annotation directly on latest snapshot
   const existingPage = await storage.getPage(normalizedUrl);
-
   if (existingPage) {
-    // Page already saved, create annotation directly
     return await handleCreateAnnotation({
       url: data.url,
       text: data.text,
@@ -1058,7 +1069,7 @@ async function handleQueueAnnotation(data: {
     });
   }
 
-  // Page not saved - queue the annotation and start page save
+  // Queue the annotation first (for both cases 1 and 2)
   const outboxAnnotation: OutboxAnnotation = {
     id: generateId(),
     pageUrl: normalizedUrl,
@@ -1080,8 +1091,27 @@ async function handleQueueAnnotation(data: {
     // Sidebar may not be open
   });
 
-  // Start saving the page in the background
-  processOutboxAnnotation(outboxAnnotation.id, data.title, data.collections);
+  // Case 1: Save already in progress - just wait for it, don't start another
+  const existingSavePromise = savesInProgress.get(normalizedUrl);
+  if (existingSavePromise) {
+    // Wait for the existing save to complete, then create the annotation
+    existingSavePromise.then(() => {
+      processQueuedAnnotation(outboxAnnotation.id);
+    });
+    return {
+      success: true,
+      data: { queued: true, annotation: outboxAnnotation },
+    };
+  }
+
+  // Case 2: No save in progress - start one and track it
+  const savePromise = startPageSaveAndProcessAnnotations(normalizedUrl, data.title, data.collections);
+  savesInProgress.set(normalizedUrl, savePromise);
+
+  // Clean up the tracking when done
+  savePromise.finally(() => {
+    savesInProgress.delete(normalizedUrl);
+  });
 
   return {
     success: true,
@@ -1090,35 +1120,48 @@ async function handleQueueAnnotation(data: {
 }
 
 /**
- * Process a queued annotation: save page, then create annotation
+ * Start saving a page and then process all queued annotations for that URL
+ * This is the main entry point when no save is in progress
  */
-async function processOutboxAnnotation(
-  annotationId: string,
+async function startPageSaveAndProcessAnnotations(
+  normalizedUrl: string,
   pageTitle: string,
   collections?: string[]
 ): Promise<void> {
-  const outboxAnnotation = await storage.getOutboxAnnotation(annotationId);
-  if (!outboxAnnotation) return;
-
   try {
     // Save the page first
     const saveResult = await handleSavePage({
-      url: outboxAnnotation.pageUrl,
+      url: normalizedUrl,
       title: pageTitle,
       collections,
     });
 
     if (!saveResult.success) {
-      await storage.updateOutboxAnnotationStatus(
-        annotationId,
-        'failed',
-        saveResult.error || 'Failed to save page'
-      );
-      notifyOutboxUpdate(annotationId);
+      // Mark all queued annotations for this URL as failed
+      await markAllOutboxAnnotationsFailed(normalizedUrl, saveResult.error || 'Failed to save page');
       return;
     }
 
-    // Page saved, now create the annotation
+    // Page saved - process all queued annotations for this URL
+    await processAllQueuedAnnotationsForUrl(normalizedUrl);
+
+  } catch (error) {
+    console.error('Failed to save page for queued annotations:', error);
+    await markAllOutboxAnnotationsFailed(
+      normalizedUrl,
+      error instanceof Error ? error.message : 'Unknown error'
+    );
+  }
+}
+
+/**
+ * Process a single queued annotation after the page is already saved
+ */
+async function processQueuedAnnotation(annotationId: string): Promise<void> {
+  const outboxAnnotation = await storage.getOutboxAnnotation(annotationId);
+  if (!outboxAnnotation) return;
+
+  try {
     await storage.updateOutboxAnnotationStatus(annotationId, 'saving_annotation');
     notifyOutboxUpdate(annotationId);
 
@@ -1150,13 +1193,42 @@ async function processOutboxAnnotation(
     }).catch(() => {});
 
   } catch (error) {
-    console.error('Failed to process outbox annotation:', error);
+    console.error('Failed to process queued annotation:', error);
     await storage.updateOutboxAnnotationStatus(
       annotationId,
       'failed',
       error instanceof Error ? error.message : 'Unknown error'
     );
     notifyOutboxUpdate(annotationId);
+  }
+}
+
+/**
+ * Process all queued annotations for a URL after the page has been saved
+ */
+async function processAllQueuedAnnotationsForUrl(normalizedUrl: string): Promise<void> {
+  const allOutbox = await storage.getAllOutboxAnnotations();
+  const forThisUrl = Object.values(allOutbox).filter(
+    (a) => a.pageUrl === normalizedUrl && a.status === 'saving_page'
+  );
+
+  for (const annotation of forThisUrl) {
+    await processQueuedAnnotation(annotation.id);
+  }
+}
+
+/**
+ * Mark all queued annotations for a URL as failed
+ */
+async function markAllOutboxAnnotationsFailed(normalizedUrl: string, error: string): Promise<void> {
+  const allOutbox = await storage.getAllOutboxAnnotations();
+  const forThisUrl = Object.values(allOutbox).filter(
+    (a) => a.pageUrl === normalizedUrl && a.status === 'saving_page'
+  );
+
+  for (const annotation of forThisUrl) {
+    await storage.updateOutboxAnnotationStatus(annotation.id, 'failed', error);
+    notifyOutboxUpdate(annotation.id);
   }
 }
 
@@ -1198,11 +1270,38 @@ async function handleRetryOutboxAnnotation(data: {
     return { success: false, error: 'Outbox annotation not found' };
   }
 
-  // Reset status and retry
+  const normalizedUrl = annotation.pageUrl;
+
+  // Check if page is now saved
+  const existingPage = await storage.getPage(normalizedUrl);
+  if (existingPage) {
+    // Page is saved - just process the annotation
+    await storage.updateOutboxAnnotationStatus(data.id, 'saving_annotation');
+    notifyOutboxUpdate(data.id);
+    processQueuedAnnotation(data.id);
+    return { success: true };
+  }
+
+  // Reset status for saving
   await storage.updateOutboxAnnotationStatus(data.id, 'saving_page');
   notifyOutboxUpdate(data.id);
 
-  processOutboxAnnotation(data.id, data.title, data.collections);
+  // Check if a save is already in progress
+  const existingSavePromise = savesInProgress.get(normalizedUrl);
+  if (existingSavePromise) {
+    // Wait for existing save to complete
+    existingSavePromise.then(() => {
+      processQueuedAnnotation(data.id);
+    });
+    return { success: true };
+  }
+
+  // Start a new save
+  const savePromise = startPageSaveAndProcessAnnotations(normalizedUrl, data.title, data.collections);
+  savesInProgress.set(normalizedUrl, savePromise);
+  savePromise.finally(() => {
+    savesInProgress.delete(normalizedUrl);
+  });
 
   return { success: true };
 }

@@ -474,6 +474,27 @@ function disableAutoSave() {
   sourceItemKey = null;
   document.removeEventListener('click', handleLinkClick, true);
 }
+
+/**
+ * Check if auto-save should be enabled for this tab on page load
+ * This handles the case when navigating from a saved page to a new page
+ */
+async function checkAndEnableAutoSave() {
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'CHECK_AUTO_SAVE',
+      data: { tabId: -1 }, // Background will use sender.tab.id
+    });
+    if (response.success && response.data?.enabled && response.data?.sourceItemKey) {
+      enableAutoSave(response.data.sourceItemKey);
+      if (LOG_LEVEL > 0) console.log('Webtero: Auto-save enabled from previous navigation');
+    }
+  } catch (error) {
+    // Tab may not have auto-save state, that's fine
+    if (LOG_LEVEL > 0) console.log('Webtero: No auto-save state for this tab');
+  }
+}
+
 // Track annotations that couldn't be found on the current page
 let notFoundAnnotationIds: Set<string> = new Set();
 let highlightsLoaded = false;
@@ -1599,12 +1620,16 @@ if (document.readyState === 'loading') {
     highlightsLoadedPromise = loadExistingHighlights();
     // Retry after a short delay to handle dynamic content
     setTimeout(retryNotFoundHighlights, 1000);
+    // Check if auto-save should be enabled (for navigation from saved pages)
+    checkAndEnableAutoSave();
   });
 } else {
   if (LOG_LEVEL > 0) console.log('Webtero: Document already loaded, calling loadExistingHighlights immediately');
   highlightsLoadedPromise = loadExistingHighlights();
   // Retry after a short delay to handle dynamic content
   setTimeout(retryNotFoundHighlights, 1000);
+  // Check if auto-save should be enabled (for navigation from saved pages)
+  checkAndEnableAutoSave();
 }
 
 // === SINGLEFILE INTEGRATION ===

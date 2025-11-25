@@ -100,7 +100,7 @@ syncProjectsBtn.addEventListener('click', async () => {
     });
 
     if (response.success) {
-      const count = response.data?.count ?? 0;
+      const count = response.data ? Object.keys(response.data).length : 0;
       showSyncStatus(`Synced ${count} project${count === 1 ? '' : 's'} successfully!`, 'success');
     } else {
       showSyncStatus(`Sync failed: ${response.error || 'Unknown error'}`, 'error');

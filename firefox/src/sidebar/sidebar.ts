@@ -37,7 +37,6 @@ const cancelProject = document.getElementById('cancelProject') as HTMLButtonElem
 const zoteroReaderOverlay = document.getElementById('zoteroReaderOverlay') as HTMLDivElement;
 const mainSidebar = document.getElementById('mainSidebar') as HTMLDivElement;
 const versionsList = document.getElementById('versionsList') as HTMLDivElement;
-const showAllAnnotationsBtn = document.getElementById('showAllAnnotations') as HTMLButtonElement;
 const readProgress = document.getElementById('readProgress') as HTMLDivElement;
 const readProgressFill = document.getElementById('readProgressFill') as HTMLDivElement;
 const readProgressText = document.getElementById('readProgressText') as HTMLSpanElement;
@@ -52,7 +51,6 @@ let currentPage: SavedPage | null = null;
 let currentSnapshots: Snapshot[] = [];
 let currentAnnotations: Annotation[] = [];
 let currentOutboxAnnotations: OutboxAnnotation[] = [];
-let showingAllAnnotations = false;
 let pageLoadTime: Date = new Date();
 let liveVersionTimer: ReturnType<typeof setInterval> | null = null;
 let readProgressTimer: ReturnType<typeof setInterval> | null = null;
@@ -148,7 +146,6 @@ async function loadPageData() {
     // Reset Links and Annotations sections
     setEmptyMessage(linksList, 'No links yet. Save this page and then click a link from this page to create a link.');
     setEmptyMessage(annotationsList, 'No annotations yet. Highlight text on the page to create one.');
-    showAllAnnotationsBtn.style.display = 'none';
     return;
   }
 
@@ -169,7 +166,6 @@ async function loadPageData() {
       currentPage = response.data.page;
       currentSnapshots = response.data.snapshots || [];
       currentAnnotations = response.data.annotations || [];
-      showingAllAnnotations = false;
 
       // Load outbox annotations for this page
       const outboxResponse = await browser.runtime.sendMessage({
@@ -410,15 +406,8 @@ function displayVersionsList() {
       versionsList.appendChild(versionDiv);
     }
 
-    // Show "All" toggle button in Annotations header if there are snapshots
-    showAllAnnotationsBtn.style.display = 'inline-block';
-    showAllAnnotationsBtn.classList.toggle('active', showingAllAnnotations);
-    showAllAnnotationsBtn.title = showingAllAnnotations
-      ? 'Show current annotations only'
-      : 'Show all annotations from snapshots';
   } else {
     versionsSection.style.display = 'none';
-    showAllAnnotationsBtn.style.display = 'none';
   }
 }
 
@@ -1585,61 +1574,5 @@ browser.runtime.onMessage.addListener((message) => {
     message.type === 'OUTBOX_ANNOTATION_DELETED'
   ) {
     loadPageData();
-  }
-});
-
-// Show all annotations button handler
-showAllAnnotationsBtn.addEventListener('click', async (e) => {
-  e.stopPropagation(); // Prevent details toggle
-  if (!currentTab?.id || !currentPage) return;
-
-  showingAllAnnotations = !showingAllAnnotations;
-  showAllAnnotationsBtn.classList.toggle('active', showingAllAnnotations);
-  showAllAnnotationsBtn.title = showingAllAnnotations
-    ? 'Show current annotations only'
-    : 'Show all annotations from snapshots';
-
-  if (showingAllAnnotations) {
-    // Fetch all annotations from all snapshots
-    try {
-      const response = await browser.runtime.sendMessage({
-        type: 'GET_ALL_SNAPSHOT_ANNOTATIONS',
-        data: { itemKey: currentPage.zoteroItemKey },
-      });
-
-      if (response.success && Array.isArray(response.data)) {
-        const allAnnotations = response.data as Annotation[];
-
-        // Send to content script to apply highlighting and detect which ones can't be found
-        const applyResponse = await browser.tabs.sendMessage(currentTab.id, {
-          type: 'APPLY_HISTORICAL_ANNOTATIONS',
-          data: { annotations: allAnnotations },
-        });
-
-        if (applyResponse.success) {
-          // Update annotations with notFound status
-          const updatedAnnotations = allAnnotations.map((ann) => ({
-            ...ann,
-            notFound: applyResponse.data?.notFoundIds?.includes(ann.id) || false,
-          }));
-
-          // Display all annotations (current + historical)
-          displayAnnotations([...currentAnnotations, ...updatedAnnotations]);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load all annotations:', error);
-    }
-  } else {
-    // Remove historical highlights and show only current annotations
-    try {
-      await browser.tabs.sendMessage(currentTab.id, {
-        type: 'REMOVE_HISTORICAL_ANNOTATIONS',
-      });
-    } catch (error) {
-      console.error('Failed to remove historical annotations:', error);
-    }
-
-    displayAnnotations(currentAnnotations);
   }
 });

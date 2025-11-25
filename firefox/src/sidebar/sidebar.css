@@ -160,7 +160,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .header {
@@ -311,25 +311,9 @@ body {
   margin-right: 0.5rem;
 }
 
-/* Section content - scrollable and resizable */
+/* Section content */
 .section-content {
   padding: 1px 1rem 1rem 1rem;
-  overflow-y: auto;
-  resize: vertical;
-  min-height: 50px;
-}
-
-/* Default heights for different sections */
-.current-page .section-content {
-  max-height: 200px;
-}
-
-.annotations .section-content {
-  max-height: 400px;
-}
-
-.projects .section-content {
-  max-height: 200px;
 }
 
 .page-status p,
