@@ -7,7 +7,7 @@ console.log('Webtero content script loaded');
 // Check for OAuth callback immediately on load
 handleOAuthCallback();
 
-let highlightToolbar: HTMLElement | null = null;
+let highlightToolbar: { host: HTMLElement; inner: HTMLElement } | null = null;
 
 // ============================================
 // Page Focus Tracking
@@ -205,7 +205,7 @@ function addLinkIndicators() {
 
         // Build indicator content with colored blocks
         const colorBlocks = buildAnnotationColorBlocks(savedInfo.annotationColors);
-        indicator.innerHTML = `[wt${colorBlocks}${savedInfo.readPercentage}%]`;
+        indicator.innerHTML = `[wt ${savedInfo.readPercentage}% ${colorBlocks}]`;
         indicator.title = buildIndicatorTooltip(savedInfo);
 
         link.appendChild(indicator);
@@ -213,7 +213,7 @@ function addLinkIndicators() {
         // Update existing indicator
         const indicator = link.querySelector('.webtero-link-indicator') as HTMLElement;
         const colorBlocks = buildAnnotationColorBlocks(savedInfo.annotationColors);
-        indicator.innerHTML = `[wt${colorBlocks}${savedInfo.readPercentage}%]`;
+        indicator.innerHTML = `[wt ${savedInfo.readPercentage}% ${colorBlocks}]`;
         indicator.title = buildIndicatorTooltip(savedInfo);
       }
     }
@@ -251,6 +251,39 @@ function buildIndicatorTooltip(info: SavedUrlInfo): string {
  */
 function removeLinkIndicators() {
   document.querySelectorAll('.webtero-link-indicator').forEach((el) => el.remove());
+}
+
+/**
+ * Get all links on the page for sidebar display
+ */
+function getPageLinksList(): Array<{ url: string; text: string }> {
+  const links: Array<{ url: string; text: string }> = [];
+  const seenUrls = new Set<string>();
+
+  document.querySelectorAll('a[href]').forEach((link) => {
+    const anchor = link as HTMLAnchorElement;
+    const href = anchor.href;
+
+    // Skip empty, anchor, and javascript links
+    if (!href || href.startsWith('#') || href.startsWith('javascript:')) {
+      return;
+    }
+
+    // Skip if we've already seen this URL
+    if (seenUrls.has(href)) {
+      return;
+    }
+    seenUrls.add(href);
+
+    // Get link text, falling back to title attribute or empty string
+    // Strip any trailing [wt ...] indicator that we may have added
+    let text = (anchor.textContent?.trim() || anchor.title || '').slice(0, 100);
+    text = text.replace(/\s*\[wt\s+\d+%[^\]]*\]\s*$/, '').trim();
+
+    links.push({ url: href, text });
+  });
+
+  return links;
 }
 
 /**
@@ -333,7 +366,9 @@ function disableAutoSave() {
 }
 // Track annotations that couldn't be found on the current page
 let notFoundAnnotationIds: Set<string> = new Set();
-let editToolbar: HTMLElement | null = null;
+let highlightsLoaded = false;
+let highlightsLoadedPromise: Promise<void> | null = null;
+let editToolbar: { host: HTMLElement; inner: HTMLElement } | null = null;
 let currentSelection: {
   text: string;
   range: Range;
@@ -346,15 +381,89 @@ let currentEditHighlight: {
 } | null = null;
 
 /**
- * Create highlight toolbar
+ * Shared toolbar styles (injected into shadow DOM)
  */
-function createHighlightToolbar(): HTMLElement {
-  const toolbar = document.createElement('div');
-  toolbar.id = 'webtero-highlight-toolbar';
-  toolbar.className = 'webtero-toolbar';
+const TOOLBAR_STYLES = `
+  :host {
+    all: initial;
+    position: absolute;
+    z-index: 2147483647;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .webtero-toolbar {
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+    padding: 6px;
+    display: flex;
+    gap: 4px;
+  }
+  .webtero-toolbar-content {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .webtero-colors {
+    display: flex;
+    gap: 4px;
+  }
+  .webtero-color-btn {
+    width: 24px;
+    height: 24px;
+    border: 2px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: transform 0.1s ease, border-color 0.1s ease;
+    box-sizing: border-box;
+  }
+  .webtero-color-btn:hover {
+    transform: scale(1.1);
+    border-color: #333;
+  }
+  .webtero-color-btn.selected {
+    border-color: #333;
+  }
+  .webtero-comment-btn,
+  .webtero-delete-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: #f5f5f5;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.1s ease;
+  }
+  .webtero-comment-btn:hover {
+    background: #e0e0e0;
+  }
+  .webtero-delete-btn:hover {
+    background: #ffebee;
+  }
+`;
+
+/**
+ * Create highlight toolbar with Shadow DOM isolation
+ */
+function createHighlightToolbar(): { host: HTMLElement; inner: HTMLElement } {
+  const host = document.createElement('div');
+  host.id = 'webtero-highlight-toolbar-host';
+  host.style.cssText = 'position: absolute; z-index: 2147483647; display: none;';
+
+  const shadow = host.attachShadow({ mode: 'closed' });
+
+  const style = document.createElement('style');
+  style.textContent = TOOLBAR_STYLES;
+  shadow.appendChild(style);
 
   const colors: HighlightColor[] = ['yellow', 'green', 'blue', 'pink', 'purple'];
 
+  const toolbar = document.createElement('div');
+  toolbar.className = 'webtero-toolbar';
   toolbar.innerHTML = `
     <div class="webtero-toolbar-content">
       <div class="webtero-colors">
@@ -382,20 +491,30 @@ function createHighlightToolbar(): HTMLElement {
     createHighlight('yellow', comment ?? undefined);
   });
 
-  document.body.appendChild(toolbar);
-  return toolbar;
+  shadow.appendChild(toolbar);
+  document.body.appendChild(host);
+
+  return { host, inner: toolbar };
 }
 
 /**
- * Create edit toolbar for existing highlights
+ * Create edit toolbar for existing highlights with Shadow DOM isolation
  */
-function createEditToolbar(): HTMLElement {
-  const toolbar = document.createElement('div');
-  toolbar.id = 'webtero-edit-toolbar';
-  toolbar.className = 'webtero-toolbar webtero-edit-toolbar';
+function createEditToolbar(): { host: HTMLElement; inner: HTMLElement } {
+  const host = document.createElement('div');
+  host.id = 'webtero-edit-toolbar-host';
+  host.style.cssText = 'position: absolute; z-index: 2147483647; display: none;';
+
+  const shadow = host.attachShadow({ mode: 'closed' });
+
+  const style = document.createElement('style');
+  style.textContent = TOOLBAR_STYLES;
+  shadow.appendChild(style);
 
   const colors: HighlightColor[] = ['yellow', 'green', 'blue', 'pink', 'purple'];
 
+  const toolbar = document.createElement('div');
+  toolbar.className = 'webtero-toolbar';
   toolbar.innerHTML = `
     <div class="webtero-toolbar-content">
       <div class="webtero-colors">
@@ -432,8 +551,10 @@ function createEditToolbar(): HTMLElement {
     deleteHighlight();
   });
 
-  document.body.appendChild(toolbar);
-  return toolbar;
+  shadow.appendChild(toolbar);
+  document.body.appendChild(host);
+
+  return { host, inner: toolbar };
 }
 
 /**
@@ -445,18 +566,18 @@ function showEditToolbar(element: HTMLElement) {
   }
 
   const rect = element.getBoundingClientRect();
-  editToolbar.style.left = `${rect.left + rect.width / 2 + window.scrollX}px`;
-  editToolbar.style.top = `${rect.top + window.scrollY - 50}px`;
-  editToolbar.style.display = 'block';
+  editToolbar.host.style.left = `${rect.left + rect.width / 2 + window.scrollX}px`;
+  editToolbar.host.style.top = `${rect.top + window.scrollY - 50}px`;
+  editToolbar.host.style.display = 'block';
 
   // Mark current color as selected
   const currentColor = element.dataset.color;
-  editToolbar.querySelectorAll('.webtero-color-btn').forEach((btn) => {
+  editToolbar.inner.querySelectorAll('.webtero-color-btn').forEach((btn: Element) => {
     const btnEl = btn as HTMLElement;
     if (btnEl.dataset.color === currentColor) {
-      btnEl.style.outline = '2px solid #333';
+      btnEl.classList.add('selected');
     } else {
-      btnEl.style.outline = 'none';
+      btnEl.classList.remove('selected');
     }
   });
 }
@@ -466,7 +587,7 @@ function showEditToolbar(element: HTMLElement) {
  */
 function hideEditToolbar() {
   if (editToolbar) {
-    editToolbar.style.display = 'none';
+    editToolbar.host.style.display = 'none';
   }
   currentEditHighlight = null;
 }
@@ -566,9 +687,9 @@ function showHighlightToolbar(x: number, y: number) {
     highlightToolbar = createHighlightToolbar();
   }
 
-  highlightToolbar.style.left = `${x}px`;
-  highlightToolbar.style.top = `${y - 50}px`;
-  highlightToolbar.style.display = 'block';
+  highlightToolbar.host.style.left = `${x}px`;
+  highlightToolbar.host.style.top = `${y - 50}px`;
+  highlightToolbar.host.style.display = 'block';
 }
 
 /**
@@ -576,7 +697,7 @@ function showHighlightToolbar(x: number, y: number) {
  */
 function hideHighlightToolbar() {
   if (highlightToolbar) {
-    highlightToolbar.style.display = 'none';
+    highlightToolbar.host.style.display = 'none';
   }
 }
 
@@ -703,6 +824,7 @@ function applyVisualHighlight(range: Range, color: HighlightColor, id: string) {
 async function loadExistingHighlights() {
   // Clear the not-found set before reloading
   notFoundAnnotationIds.clear();
+  highlightsLoaded = false;
 
   try {
     const response = await browser.runtime.sendMessage({
@@ -721,6 +843,8 @@ async function loadExistingHighlights() {
     }
   } catch (error) {
     console.error('Failed to load highlights:', error);
+  } finally {
+    highlightsLoaded = true;
   }
 }
 
@@ -787,16 +911,36 @@ document.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
   const highlightElement = target.closest('.webtero-highlight') as HTMLElement;
 
-  // Check if clicking on a toolbar
+  // Check if clicking on a toolbar (check host element contains target)
   if (
-    (highlightToolbar && highlightToolbar.contains(target)) ||
-    (editToolbar && editToolbar.contains(target))
+    (highlightToolbar && highlightToolbar.host.contains(target)) ||
+    (editToolbar && editToolbar.host.contains(target))
   ) {
     return;
   }
 
-  // If clicking on a highlight, show edit toolbar
+  // If clicking on a highlight, check if there's an underlying link
   if (highlightElement && highlightElement.dataset.highlightId) {
+    // Check if the click target or any ancestor (up to highlight) is a link
+    const linkElement = target.closest('a[href]');
+    if (linkElement && highlightElement.contains(linkElement)) {
+      // User is clicking a link within the highlight - let it through
+      // Just hide any open toolbars
+      hideHighlightToolbar();
+      hideEditToolbar();
+      return;
+    }
+
+    // Also check if the highlight is inside a link
+    const parentLink = highlightElement.closest('a[href]');
+    if (parentLink) {
+      // Highlight is inside a link - let the click through
+      hideHighlightToolbar();
+      hideEditToolbar();
+      return;
+    }
+
+    // No link involved - show edit toolbar
     e.preventDefault();
     e.stopPropagation();
     hideHighlightToolbar();
@@ -818,9 +962,11 @@ document.addEventListener('click', (e) => {
 
 // Load existing highlights when page loads
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', loadExistingHighlights);
+  document.addEventListener('DOMContentLoaded', () => {
+    highlightsLoadedPromise = loadExistingHighlights();
+  });
 } else {
-  loadExistingHighlights();
+  highlightsLoadedPromise = loadExistingHighlights();
 }
 
 // === SINGLEFILE INTEGRATION ===
@@ -1137,10 +1283,17 @@ browser.runtime.onMessage.addListener((message, sender) => {
   }
 
   if (message.type === 'GET_NOT_FOUND_ANNOTATIONS') {
-    return Promise.resolve({
-      success: true,
-      data: { notFoundIds: Array.from(notFoundAnnotationIds) },
-    });
+    // Wait for highlights to finish loading before returning not-found list
+    const waitForHighlights = async () => {
+      if (highlightsLoadedPromise) {
+        await highlightsLoadedPromise;
+      }
+      return {
+        success: true,
+        data: { notFoundIds: Array.from(notFoundAnnotationIds) },
+      };
+    };
+    return waitForHighlights();
   }
 
   // Focus tracking messages
@@ -1180,6 +1333,12 @@ browser.runtime.onMessage.addListener((message, sender) => {
   if (message.type === 'REFRESH_LINK_INDICATORS') {
     loadSavedUrlsAndIndicators();
     return Promise.resolve({ success: true });
+  }
+
+  // Get all links on the page for sidebar display
+  if (message.type === 'GET_PAGE_LINKS_LIST') {
+    const links = getPageLinksList();
+    return Promise.resolve({ success: true, data: links });
   }
 
   // Outbox annotation updates

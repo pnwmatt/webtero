@@ -843,6 +843,17 @@ body {
   color: #666;
   font-family: monospace;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.link-indicator .color-block {
+  display: inline-block;
+  width: 3px;
+  height: 0.9em;
+  border-radius: 1px;
+  margin: 0 0.5px;
 }
 
 .link-url {
@@ -865,6 +876,11 @@ body {
   padding: 0.5rem;
   background: var(--fill-quinary);
   border-radius: 4px;
+  cursor: pointer;
+}
+
+.read-progress:hover {
+  background: var(--fill-quaternary);
 }
 
 .read-progress-bar {

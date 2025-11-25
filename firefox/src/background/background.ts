@@ -98,6 +98,11 @@ browser.runtime.onMessage.addListener(
             message.data as { itemKey: string }
           );
 
+        case 'SET_READ_PERCENTAGE':
+          return await handleSetReadPercentage(
+            message.data as { itemKey: string; percentage: number }
+          );
+
         case 'ENABLE_AUTO_SAVE':
           return await handleEnableAutoSave(
             message.data as { tabId: number; sourceItemKey: string; sourceUrl: string }
@@ -803,6 +808,27 @@ async function handleGetPageReadPercentage(data: {
 }): Promise<MessageResponse> {
   const percentage = await storage.getReadPercentage(data.itemKey);
   return { success: true, data: { percentage } };
+}
+
+/**
+ * Set read percentage to a specific value (e.g., mark as 100% read)
+ */
+async function handleSetReadPercentage(data: {
+  itemKey: string;
+  percentage: number;
+}): Promise<MessageResponse> {
+  // Create a focus session that covers the entire document
+  const sessionId = `manual-${Date.now()}`;
+  await storage.saveFocusSession({
+    id: sessionId,
+    itemKey: data.itemKey,
+    tabId: -1,
+    startTime: new Date().toISOString(),
+    endTime: new Date().toISOString(),
+    readRanges: [{ start: 0, end: data.percentage }],
+  });
+
+  return { success: true };
 }
 
 /**

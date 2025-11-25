@@ -202,6 +202,30 @@ async function displayPageStatus() {
   // Load projects into the header dropdown
   await loadProjectsForDropdown();
 
+  // If dropdown is on "My Library" and current page has projects, switch to page's project
+  if (currentPage && currentPage.projects.length > 0 && projectDropdown.value === '') {
+    // Get the most recently added project (pick the last one if multiple)
+    const allProjects = await storage.getAllProjects();
+    const pageProjectIds = currentPage.projects;
+
+    // Sort page's projects by dateModified descending to get the most recent
+    const sortedPageProjects = pageProjectIds
+      .map((id) => allProjects[id])
+      .filter((p) => p) // Filter out any missing projects
+      .sort((a, b) => {
+        const dateA = a.dateModified ? new Date(a.dateModified).getTime() : 0;
+        const dateB = b.dateModified ? new Date(b.dateModified).getTime() : 0;
+        return dateB - dateA;
+      });
+
+    if (sortedPageProjects.length > 0) {
+      const mostRecentProject = sortedPageProjects[0];
+      if (projectDropdown.querySelector(`option[value="${mostRecentProject.id}"]`)) {
+        projectDropdown.value = mostRecentProject.id;
+      }
+    }
+  }
+
   if (currentPage) {
     // Show saved state with versions
     savedInfo.style.display = 'block';
@@ -793,6 +817,26 @@ settingsBtn.addEventListener('click', () => {
   browser.runtime.openOptionsPage();
 });
 
+// Read progress click - set to 100% read
+readProgress?.addEventListener('click', async () => {
+  if (!currentPage?.zoteroItemKey) return;
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'SET_READ_PERCENTAGE',
+      data: { itemKey: currentPage.zoteroItemKey, percentage: 100 },
+    });
+
+    if (response.success) {
+      // Update the UI immediately
+      readProgressFill.style.width = '100%';
+      readProgressText.textContent = '100% read';
+    }
+  } catch (error) {
+    console.error('Failed to set read percentage:', error);
+  }
+});
+
 // Utility
 function escapeHtml(text: string): string {
   const div = document.createElement('div');
@@ -896,32 +940,134 @@ const linksList = document.getElementById('linksList') as HTMLDivElement;
 interface LinkedPage {
   itemKey: string;
   url: string;
+  title?: string;
   direction: 'outgoing' | 'incoming';
   readPercentage: number;
+  annotationColors: string[];
 }
 
 /**
  * Load and display links for the current page
+ * Shows all outbound links that point to saved pages
  */
 async function loadLinks() {
-  if (!currentPage?.zoteroItemKey) {
-    linksList.innerHTML = '<p class="empty">Save this page to start tracking links.</p>';
+  if (!currentTab?.id) {
+    linksList.innerHTML = '<p class="empty">No active tab.</p>';
     return;
   }
 
   try {
-    const response = await browser.runtime.sendMessage({
-      type: 'GET_PAGE_LINKS',
-      data: { itemKey: currentPage.zoteroItemKey },
+    // Get all outbound links from the content script
+    let pageLinks: Array<{ url: string; text: string }> = [];
+    try {
+      const linksResponse = await browser.tabs.sendMessage(currentTab.id, {
+        type: 'GET_PAGE_LINKS_LIST',
+      });
+      if (linksResponse?.success) {
+        pageLinks = linksResponse.data || [];
+      }
+    } catch {
+      // Content script may not be loaded
+      console.debug('Could not get page links from content script');
+    }
+
+    // Get all saved URLs with their data
+    const savedUrlsResponse = await browser.runtime.sendMessage({
+      type: 'GET_SAVED_URLS',
     });
 
-    if (response.success && Array.isArray(response.data)) {
-      displayLinks(response.data as LinkedPage[]);
+    if (!savedUrlsResponse.success) {
+      linksList.innerHTML = '<p class="empty">Failed to load saved pages.</p>';
+      return;
     }
+
+    const savedUrls = savedUrlsResponse.data as Array<{
+      url: string;
+      itemKey: string;
+      readPercentage: number;
+      annotationColors: string[];
+    }>;
+
+    // Create a map of normalized URLs to saved data
+    const savedUrlMap = new Map<string, typeof savedUrls[0]>();
+    for (const saved of savedUrls) {
+      savedUrlMap.set(normalizeUrlForSidebar(saved.url), saved);
+    }
+
+    // Current page URL for filtering
+    const currentPageUrl = currentTab.url ? normalizeUrlForSidebar(currentTab.url) : '';
+
+    // Find outbound links that point to saved pages
+    const outboundLinks: LinkedPage[] = [];
+    const seenUrls = new Set<string>();
+
+    for (const link of pageLinks) {
+      const normalizedUrl = normalizeUrlForSidebar(link.url);
+
+      // Skip current page and duplicates
+      if (normalizedUrl === currentPageUrl || seenUrls.has(normalizedUrl)) {
+        continue;
+      }
+
+      const savedData = savedUrlMap.get(normalizedUrl);
+      if (savedData) {
+        seenUrls.add(normalizedUrl);
+        outboundLinks.push({
+          itemKey: savedData.itemKey,
+          url: savedData.url,
+          title: link.text || undefined,
+          direction: 'outgoing',
+          readPercentage: savedData.readPercentage,
+          annotationColors: savedData.annotationColors,
+        });
+      }
+    }
+
+    displayLinks(outboundLinks);
   } catch (error) {
     console.error('Failed to load links:', error);
     linksList.innerHTML = '<p class="empty">Failed to load links.</p>';
   }
+}
+
+/**
+ * Normalize URL for comparison in sidebar
+ */
+function normalizeUrlForSidebar(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    let path = parsed.pathname;
+    if (path.endsWith('/') && path.length > 1) {
+      path = path.slice(0, -1);
+    }
+    parsed.pathname = path;
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Build HTML for annotation color blocks in links section
+ */
+function buildColorBlocksHtml(colors: string[]): string {
+  if (colors.length === 0) return '';
+
+  const colorMap: Record<string, string> = {
+    yellow: '#ffd400',
+    green: '#5fb236',
+    blue: '#2ea8e5',
+    pink: '#e56eee',
+    purple: '#a28ae5',
+  };
+
+  const blocks = colors.map((color) => {
+    const bgColor = colorMap[color] || '#999';
+    return `<span class="color-block" style="background:${bgColor}"></span>`;
+  }).join('');
+
+  return ` ${blocks}`;
 }
 
 /**
@@ -930,44 +1076,28 @@ async function loadLinks() {
 function displayLinks(links: LinkedPage[]) {
   if (links.length === 0) {
     linksList.innerHTML =
-      '<p class="empty">No links yet. Click links on this page after saving to track them.</p>';
+      '<p class="empty">No outbound links to saved pages found.</p>';
     return;
   }
 
-  const outgoing = links.filter((l) => l.direction === 'outgoing');
-  const incoming = links.filter((l) => l.direction === 'incoming');
+  let html = '<div class="link-group"><h4>Links to saved pages</h4>';
+  html += links
+    .map((link) => {
+      const colorBlocks = buildColorBlocksHtml(link.annotationColors);
+      // Use title only if it's meaningful (more than 5 chars and less than 60)
+      const displayText = link.title && link.title.length > 5 && link.title.length < 60
+        ? link.title
+        : truncateUrl(link.url);
 
-  let html = '';
-
-  if (outgoing.length > 0) {
-    html += '<div class="link-group"><h4>Links from this page</h4>';
-    html += outgoing
-      .map(
-        (link) => `
+      return `
         <div class="link-item" data-url="${escapeHtml(link.url)}">
-          <span class="link-indicator">[wt ${link.readPercentage}%]</span>
-          <span class="link-url" title="${escapeHtml(link.url)}">${escapeHtml(truncateUrl(link.url))}</span>
+          <span class="link-indicator">[wt ${link.readPercentage}%${colorBlocks}]</span>
+          <span class="link-url" title="${escapeHtml(link.url)}">${escapeHtml(displayText)}</span>
         </div>
-      `
-      )
-      .join('');
-    html += '</div>';
-  }
-
-  if (incoming.length > 0) {
-    html += '<div class="link-group"><h4>Links to this page</h4>';
-    html += incoming
-      .map(
-        (link) => `
-        <div class="link-item" data-url="${escapeHtml(link.url)}">
-          <span class="link-indicator">[wt ${link.readPercentage}%]</span>
-          <span class="link-url" title="${escapeHtml(link.url)}">${escapeHtml(truncateUrl(link.url))}</span>
-        </div>
-      `
-      )
-      .join('');
-    html += '</div>';
-  }
+      `;
+    })
+    .join('');
+  html += '</div>';
 
   linksList.innerHTML = html;
 
