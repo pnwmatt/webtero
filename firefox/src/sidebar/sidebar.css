@@ -278,6 +278,30 @@ body {
   opacity: 0.7;
 }
 
+/* Toggle button in section header */
+.section-header .toggle-btn {
+  font-size: 0.625rem;
+  font-weight: 600;
+  padding: 0.125rem 0.375rem;
+  background: #f5f5f5;
+  border: 1px solid var(--fill-quinary);
+  border-radius: 3px;
+  color: var(--fill-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.section-header .toggle-btn:hover {
+  background: var(--fill-quinary);
+  opacity: 1;
+}
+
+.section-header .toggle-btn.active {
+  background: var(--accent-blue50);
+  border-color: var(--accent-blue50);
+  color: white;
+}
+
 /* Saved icon (green checkmark) */
 .saved-icon {
   color: #4caf50;
@@ -683,7 +707,67 @@ body {
 }
 
 /* ============================================
-   VERSIONS LIST
+   LIVE VERSION SECTION
+   ============================================ */
+
+.live-version-section {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--accent-blue10);
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+}
+
+.live-version-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.live-version-header .version-icon {
+  color: #4caf50;
+  flex-shrink: 0;
+}
+
+.live-version-header .version-label {
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.live-version-header .version-date {
+  font-size: 0.75rem;
+  color: var(--fill-tertiary);
+  white-space: nowrap;
+}
+
+.live-version-section .save-btn {
+  padding: 0.375rem 0.75rem;
+  background: var(--accent-blue50);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.live-version-section .save-btn:hover {
+  background: #1976d2;
+}
+
+.live-version-section .save-btn:disabled {
+  background: #bbb;
+  cursor: not-allowed;
+}
+
+/* ============================================
+   VERSIONS LIST (Past Versions / Snapshots)
    ============================================ */
 
 .versions-section {

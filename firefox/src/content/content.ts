@@ -2,6 +2,8 @@ import type { Annotation, HighlightColor } from '../lib/types';
 import { getXPath, getNodeFromXPath, getColorValue } from '../lib/utils';
 import { config } from '../lib/config';
 
+const LOG_LEVEL = 0;
+
 console.log('Webtero content script loaded');
 
 // Check for OAuth callback immediately on load
@@ -804,7 +806,7 @@ function applyVisualHighlight(range: Range, color: HighlightColor, id: string) {
   span.dataset.highlightId = id;
   span.dataset.color = color;
   span.style.backgroundColor = getColorValue(color);
-  span.style.opacity = '0.4';
+  // No opacity reduction - pastel colors already provide WCAG AA contrast
 
   try {
     range.surroundContents(span);
@@ -826,26 +828,233 @@ async function loadExistingHighlights() {
   notFoundAnnotationIds.clear();
   highlightsLoaded = false;
 
+  console.log('Webtero: loadExistingHighlights called for URL:', window.location.href);
+
   try {
     const response = await browser.runtime.sendMessage({
       type: 'GET_ANNOTATIONS',
       data: { url: window.location.href },
     });
 
+    console.log('Webtero: GET_ANNOTATIONS response:', response);
+
     if (response.success && Array.isArray(response.data)) {
       const annotations = response.data as Annotation[];
-      annotations.forEach((ann) => {
+      console.log(`Webtero: Found ${annotations.length} annotations to apply`);
+      annotations.forEach((ann, index) => {
+        console.log(`Webtero: [${index + 1}/${annotations.length}] Applying annotation:`, {
+          id: ann.id,
+          text: ann.text,
+          xpath: ann.position?.xpath,
+          offset: ann.position?.offset,
+          length: ann.position?.length,
+        });
         const success = applyStoredHighlight(ann);
         if (!success) {
           notFoundAnnotationIds.add(ann.id);
+          console.log(`Webtero: [${index + 1}/${annotations.length}] FAILED to apply annotation:`, ann.id);
+        } else {
+          console.log(`Webtero: [${index + 1}/${annotations.length}] SUCCESS applied annotation:`, ann.id);
         }
       });
     }
   } catch (error) {
-    console.error('Failed to load highlights:', error);
+    console.error('Webtero: Failed to load highlights:', error);
   } finally {
     highlightsLoaded = true;
+    console.log('Webtero: loadExistingHighlights complete. Not found:', Array.from(notFoundAnnotationIds));
   }
+}
+
+/**
+ * Retry applying highlights that were previously not found
+ * This is useful when the DOM changes or loads dynamically
+ */
+async function retryNotFoundHighlights(): Promise<{ retriedCount: number; stillNotFound: number }> {
+  console.log('Webtero: retryNotFoundHighlights called, notFoundAnnotationIds:', Array.from(notFoundAnnotationIds));
+
+  if (notFoundAnnotationIds.size === 0) {
+    console.log('Webtero: No not-found annotations to retry');
+    return { retriedCount: 0, stillNotFound: 0 };
+  }
+
+  console.log(`Webtero: Retrying ${notFoundAnnotationIds.size} not-found highlights...`);
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'GET_ANNOTATIONS',
+      data: { url: window.location.href },
+    });
+
+    console.log('Webtero: retryNotFoundHighlights GET_ANNOTATIONS response:', response);
+
+    if (response.success && Array.isArray(response.data)) {
+      const annotations = response.data as Annotation[];
+      const previouslyNotFoundIds = Array.from(notFoundAnnotationIds);
+      const retriedCount = previouslyNotFoundIds.length;
+
+      console.log(`Webtero: retryNotFoundHighlights - ${annotations.length} annotations from server, ${retriedCount} to retry`);
+
+      // Try to apply each previously not-found annotation
+      for (const id of previouslyNotFoundIds) {
+        const annotation = annotations.find(a => a.id === id);
+        if (!annotation) {
+          console.log(`Webtero: retryNotFoundHighlights - annotation ${id} not found in server response`);
+          continue;
+        }
+
+        console.log(`Webtero: retryNotFoundHighlights - retrying annotation:`, {
+          id: annotation.id,
+          text: annotation.text,
+          xpath: annotation.position?.xpath,
+          offset: annotation.position?.offset,
+          length: annotation.position?.length,
+        });
+
+        // Skip if already applied (shouldn't happen, but be safe)
+        if (document.querySelector(`.webtero-highlight[data-highlight-id="${id}"]`)) {
+          console.log(`Webtero: retryNotFoundHighlights - ${id} already has highlight element, skipping`);
+          notFoundAnnotationIds.delete(id);
+          continue;
+        }
+
+        const success = applyStoredHighlight(annotation);
+        if (success) {
+          notFoundAnnotationIds.delete(id);
+          console.log(`Webtero: retryNotFoundHighlights - SUCCESS applied: ${id}`);
+        } else {
+          console.log(`Webtero: retryNotFoundHighlights - FAILED to apply: ${id}`);
+        }
+      }
+
+      const stillNotFound = notFoundAnnotationIds.size;
+      console.log(`Webtero: Retry complete. ${retriedCount - stillNotFound}/${retriedCount} highlights applied. ${stillNotFound} still not found.`);
+
+      return { retriedCount, stillNotFound };
+    } else {
+      console.log('Webtero: retryNotFoundHighlights - response not successful or no data');
+    }
+  } catch (error) {
+    console.error('Failed to retry not-found highlights:', error);
+  }
+
+  return { retriedCount: 0, stillNotFound: notFoundAnnotationIds.size };
+}
+
+/**
+ * Find a text range that matches the given text, starting from a node
+ * This handles cases where text spans multiple DOM nodes (e.g., text + <a> + more text)
+ */
+function findTextRangeFromNode(startNode: Node, offset: number, searchText: string): Range | null {
+  // First, try the simple case: text is entirely within the start node
+  const textContent = startNode.textContent || '';
+  const actualText = textContent.substring(offset, offset + searchText.length);
+
+  if (actualText === searchText) {
+    const range = document.createRange();
+    range.setStart(startNode, offset);
+    range.setEnd(startNode, offset + searchText.length);
+    return range;
+  }
+
+  // Text spans multiple nodes - we need to walk the DOM
+  console.log('Webtero: Text spans multiple nodes, searching...');
+
+  // Get the parent element to search within
+  const parentElement = startNode.parentElement;
+  if (!parentElement) {
+    console.warn('Webtero: No parent element found for start node');
+    return null;
+  }
+
+  // Walk up a few levels to get a reasonable search container
+  let searchContainer: Element = parentElement;
+  for (let i = 0; i < 3 && searchContainer.parentElement; i++) {
+    searchContainer = searchContainer.parentElement;
+  }
+
+  // Use TreeWalker to iterate through text nodes
+  const walker = document.createTreeWalker(
+    searchContainer,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  // Find all text nodes and their positions
+  const textNodes: { node: Text; start: number; end: number }[] = [];
+  let totalLength = 0;
+  let node: Text | null = null;
+
+  while ((node = walker.nextNode() as Text | null)) {
+    const nodeText = node.textContent || '';
+    textNodes.push({
+      node,
+      start: totalLength,
+      end: totalLength + nodeText.length,
+    });
+    totalLength += nodeText.length;
+  }
+
+  // Concatenate all text to search in
+  const fullText = textNodes.map(tn => tn.node.textContent || '').join('');
+
+  // Find the search text in the concatenated content
+  // Start searching from a position relative to where we expect it
+  let searchStartIndex = 0;
+
+  // Try to find the start node to narrow down the search position
+  const startNodeIndex = textNodes.findIndex(tn => tn.node === startNode);
+  if (startNodeIndex !== -1) {
+    searchStartIndex = Math.max(0, textNodes[startNodeIndex].start + offset - 10);
+  }
+
+  const foundIndex = fullText.indexOf(searchText, searchStartIndex);
+  if (foundIndex === -1) {
+    // Try from the beginning as fallback
+    const fallbackIndex = fullText.indexOf(searchText);
+    if (fallbackIndex === -1) {
+      console.warn('Webtero: Could not find text in container:', searchText.substring(0, 50));
+      return null;
+    }
+    return createRangeFromTextNodes(textNodes, fallbackIndex, searchText.length);
+  }
+
+  return createRangeFromTextNodes(textNodes, foundIndex, searchText.length);
+}
+
+/**
+ * Create a Range from text node positions
+ */
+function createRangeFromTextNodes(
+  textNodes: { node: Text; start: number; end: number }[],
+  startIndex: number,
+  length: number
+): Range | null {
+  const endIndex = startIndex + length;
+
+  // Find the start node and offset
+  let startNodeInfo: { node: Text; offset: number } | null = null;
+  let endNodeInfo: { node: Text; offset: number } | null = null;
+
+  for (const tn of textNodes) {
+    if (!startNodeInfo && startIndex >= tn.start && startIndex < tn.end) {
+      startNodeInfo = { node: tn.node, offset: startIndex - tn.start };
+    }
+    if (endIndex > tn.start && endIndex <= tn.end) {
+      endNodeInfo = { node: tn.node, offset: endIndex - tn.start };
+      break;
+    }
+  }
+
+  if (!startNodeInfo || !endNodeInfo) {
+    console.warn('Webtero: Could not determine range boundaries');
+    return null;
+  }
+
+  const range = document.createRange();
+  range.setStart(startNodeInfo.node, startNodeInfo.offset);
+  range.setEnd(endNodeInfo.node, endNodeInfo.offset);
+  return range;
 }
 
 /**
@@ -856,40 +1065,44 @@ function applyStoredHighlight(annotation: Annotation): boolean {
   try {
     // Fix legacy XPath format: convert #text[n] to text()[n]
     let xpath = annotation.position.xpath;
+    console.log('Webtero: applyStoredHighlight - original xpath:', xpath);
     if (xpath.includes('#text[')) {
       xpath = xpath.replace(/#text\[(\d+)\]/g, 'text()[$1]');
+      console.log('Webtero: applyStoredHighlight - converted xpath:', xpath);
     }
 
     const node = getNodeFromXPath(xpath);
+    console.log('Webtero: applyStoredHighlight - found node:', node, 'nodeType:', node?.nodeType);
     if (!node || node.nodeType !== Node.TEXT_NODE) {
-      console.warn('Could not find text node for highlight:', xpath);
+      console.warn('Webtero: Could not find text node for highlight:', xpath, 'got:', node);
       return false;
     }
 
-    // Check if the text content still matches
-    const textContent = node.textContent || '';
     const expectedText = annotation.text;
-    const actualText = textContent.substring(
-      annotation.position.offset,
-      annotation.position.offset + annotation.position.length
-    );
 
-    if (actualText !== expectedText) {
-      console.warn('Text mismatch for highlight:', {
+    // Use the new multi-node search function
+    const range = findTextRangeFromNode(node, annotation.position.offset, expectedText);
+
+    if (!range) {
+      console.warn('Webtero: Could not find text range for highlight:', {
         expected: expectedText,
-        actual: actualText,
+        xpath: xpath,
       });
       return false;
     }
 
-    const range = document.createRange();
-    range.setStart(node, annotation.position.offset);
-    range.setEnd(node, annotation.position.offset + annotation.position.length);
+    console.log('Webtero: applyStoredHighlight - found range:', {
+      startNode: range.startContainer,
+      endNode: range.endContainer,
+      startOffset: range.startOffset,
+      endOffset: range.endOffset,
+    });
 
     applyVisualHighlight(range, annotation.color, annotation.id);
+    console.log('Webtero: applyStoredHighlight - successfully applied highlight');
     return true;
   } catch (error) {
-    console.error('Failed to apply stored highlight:', error);
+    console.error('Webtero: Failed to apply stored highlight:', error);
     return false;
   }
 }
@@ -961,12 +1174,20 @@ document.addEventListener('click', (e) => {
 });
 
 // Load existing highlights when page loads
+console.log('Webtero: Initializing highlights, document.readyState:', document.readyState);
 if (document.readyState === 'loading') {
+  console.log('Webtero: Document still loading, waiting for DOMContentLoaded');
   document.addEventListener('DOMContentLoaded', () => {
+    console.log('Webtero: DOMContentLoaded fired, calling loadExistingHighlights');
     highlightsLoadedPromise = loadExistingHighlights();
+    // Retry after a short delay to handle dynamic content
+    setTimeout(retryNotFoundHighlights, 1000);
   });
 } else {
+  console.log('Webtero: Document already loaded, calling loadExistingHighlights immediately');
   highlightsLoadedPromise = loadExistingHighlights();
+  // Retry after a short delay to handle dynamic content
+  setTimeout(retryNotFoundHighlights, 1000);
 }
 
 // === SINGLEFILE INTEGRATION ===
@@ -1187,35 +1408,28 @@ function applyStoredHighlightWithCheck(annotation: Annotation): boolean {
       return false;
     }
 
-    // Check if the text content still matches
-    const textContent = node.textContent || '';
     const expectedText = annotation.text;
-    const actualText = textContent.substring(
-      annotation.position.offset,
-      annotation.position.offset + annotation.position.length
-    );
 
-    // If the text doesn't match exactly, try to find it nearby
-    if (actualText !== expectedText) {
-      console.warn('Text mismatch for historical highlight:', {
+    // Use the multi-node search function (handles text spanning multiple nodes)
+    const range = findTextRangeFromNode(node, annotation.position.offset, expectedText);
+
+    if (!range) {
+      console.warn('Could not find text range for historical highlight:', {
         expected: expectedText,
-        actual: actualText,
+        xpath: xpath,
       });
       return false;
     }
 
-    const range = document.createRange();
-    range.setStart(node, annotation.position.offset);
-    range.setEnd(node, annotation.position.offset + annotation.position.length);
-
     // Apply visual highlight with historical marker
+    // Use dashed border instead of opacity to maintain WCAG contrast
     const span = document.createElement('span');
     span.className = 'webtero-highlight webtero-historical-highlight';
     span.dataset.highlightId = annotation.id;
     span.dataset.color = annotation.color;
     span.dataset.historical = 'true';
     span.style.backgroundColor = getColorValue(annotation.color);
-    span.style.opacity = '0.3'; // Slightly dimmer for historical
+    span.style.borderBottom = '2px dashed currentColor'; // Visual distinction without reducing contrast
 
     try {
       range.surroundContents(span);
@@ -1294,6 +1508,18 @@ browser.runtime.onMessage.addListener((message, sender) => {
       };
     };
     return waitForHighlights();
+  }
+
+  if (message.type === 'RETRY_NOT_FOUND_HIGHLIGHTS') {
+    // Retry applying highlights that were previously not found
+    return retryNotFoundHighlights().then((result) => ({
+      success: true,
+      data: {
+        retriedCount: result.retriedCount,
+        stillNotFound: result.stillNotFound,
+        notFoundIds: Array.from(notFoundAnnotationIds),
+      },
+    }));
   }
 
   // Focus tracking messages
@@ -1393,19 +1619,18 @@ function scrollToHighlight(id: string) {
     block: 'center',
   });
 
-  // Flash the highlight to draw attention
-  const originalOpacity = highlight.style.opacity;
-  highlight.style.transition = 'opacity 0.15s ease-in-out';
+  // Flash the highlight to draw attention using outline (maintains WCAG contrast)
+  highlight.style.transition = 'outline 0.15s ease-in-out';
 
-  // Flash sequence
+  // Flash sequence using outline instead of opacity
   const flash = () => {
-    highlight.style.opacity = '0.8';
+    highlight.style.outline = '3px solid #1976d2';
     setTimeout(() => {
-      highlight.style.opacity = '0.2';
+      highlight.style.outline = 'none';
       setTimeout(() => {
-        highlight.style.opacity = '0.8';
+        highlight.style.outline = '3px solid #1976d2';
         setTimeout(() => {
-          highlight.style.opacity = originalOpacity || '0.4';
+          highlight.style.outline = '';
           highlight.style.transition = '';
         }, 150);
       }, 150);

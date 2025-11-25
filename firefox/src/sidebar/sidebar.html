@@ -46,7 +46,6 @@
       <select id="projectDropdown" class="header-dropdown">
         <option value="">My Library</option>
       </select>
-      <button id="savePageBtn" class="header-save-btn" title="Save to Zotero">Save</button>
       <button id="settingsBtn" class="header-settings-btn" title="Settings">&#9881;</button>
     </header>
 
@@ -62,27 +61,34 @@
         </div>
 
         <div id="pageActions" class="page-actions" style="display: none;">
-          <div id="savedInfo" class="saved-info" style="display: none;">
-            <!-- Read progress indicator -->
-            <div id="readProgress" class="read-progress" style="display: none;">
-              <div class="read-progress-bar">
-                <div id="readProgressFill" class="read-progress-fill"></div>
-              </div>
-              <span id="readProgressText" class="read-progress-text">0% read</span>
+          <!-- Live Version - always visible -->
+          <div id="liveVersionSection" class="live-version-section">
+            <div class="live-version-header">
+              <span class="version-icon">&#9679;</span>
+              <span class="version-label">Live Version</span>
+              <span id="liveVersionDate" class="version-date"></span>
             </div>
+            <button id="savePageBtn" class="save-btn" title="Save to Zotero">Save</button>
+          </div>
 
+          <!-- Read progress indicator (shown for saved pages) -->
+          <div id="readProgress" class="read-progress" style="display: none;">
+            <div class="read-progress-bar">
+              <div id="readProgressFill" class="read-progress-fill"></div>
+            </div>
+            <span id="readProgressText" class="read-progress-text">0% read</span>
+          </div>
+
+          <div id="savedInfo" class="saved-info" style="display: none;">
             <p class="meta" id="savedProject"></p>
             <p class="meta" id="savedDate"></p>
 
-            <!-- Versions list -->
-            <div id="versionsSection" class="versions-section">
-              <h4>Versions</h4>
+            <!-- Past Versions list (snapshots only) -->
+            <div id="versionsSection" class="versions-section" style="display: none;">
+              <h4>Past Versions</h4>
               <div id="versionsList" class="versions-list">
-                <!-- Live version and snapshots will be populated here -->
+                <!-- Snapshots will be populated here -->
               </div>
-              <button id="showAllAnnotations" class="show-all-btn" style="display: none;">
-                Show all annotations
-              </button>
             </div>
           </div>
         </div>
@@ -107,6 +113,7 @@
   <summary class="section-header">
     <span class="chevron">&#8250;</span>
     <h2>Annotations</h2>
+    <button id="showAllAnnotations" class="toggle-btn" style="display: none;" title="Show all annotations from snapshots">All</button>
     <button id="refreshAnnotations" title="Refresh">&#8635;</button>
   </summary>
   <div class="section-content">

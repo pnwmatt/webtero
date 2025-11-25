@@ -5,6 +5,8 @@ import { generateId, normalizeUrl, md5 } from '../lib/utils';
 import { config } from '../lib/config';
 import * as zoteroOAuth from '../lib/zotero-oauth';
 
+const LOG_LEVEL = 0;
+
 console.log('Webtero background script loaded');
 
 /**
@@ -425,7 +427,7 @@ async function handleGetAnnotations(data: {
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
   const annotations = await storage.getAnnotationsByPage(normalizedUrl);
-
+  console.log('[webtero bg] Fetched annotations for', normalizedUrl, annotations.length);
   return {
     success: true,
     data: annotations,

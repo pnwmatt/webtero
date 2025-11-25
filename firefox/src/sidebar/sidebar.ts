@@ -3,6 +3,8 @@ import { storage } from '../lib/storage';
 import { formatDate } from '../lib/utils';
 import { config } from '../lib/config';
 
+const LOG_LEVEL = 0;
+
 // DOM elements - Sign-in overlay
 const signInOverlay = document.getElementById('signInOverlay') as HTMLDivElement;
 const signInBtn = document.getElementById('signInBtn') as HTMLButtonElement;
@@ -35,6 +37,8 @@ const showAllAnnotationsBtn = document.getElementById('showAllAnnotations') as H
 const readProgress = document.getElementById('readProgress') as HTMLDivElement;
 const readProgressFill = document.getElementById('readProgressFill') as HTMLDivElement;
 const readProgressText = document.getElementById('readProgressText') as HTMLSpanElement;
+const liveVersionDate = document.getElementById('liveVersionDate') as HTMLSpanElement;
+const versionsSection = document.getElementById('versionsSection') as HTMLDivElement;
 
 let currentTab: browser.tabs.Tab | null = null;
 let currentPage: SavedPage | null = null;
@@ -125,6 +129,10 @@ async function loadPageData() {
     pageStatus.innerHTML = '<p class="empty">Webtero is not available on this site.</p>';
     pageActions.style.display = 'none';
     savePageBtn.disabled = true;
+    // Reset Links and Annotations sections
+    linksList.innerHTML = '<p class="empty">No links yet. Save this page and then click a link from this page to create a link.</p>';
+    annotationsList.innerHTML = '<p class="empty">No annotations yet. Highlight text on the page to create one.</p>';
+    showAllAnnotationsBtn.style.display = 'none';
     return;
   }
 
@@ -157,21 +165,26 @@ async function loadPageData() {
       await displayPageStatus();
 
       // Query content script for which annotations couldn't be found
+      console.log('Webtero sidebar: Querying for not-found annotations, currentAnnotations.length:', currentAnnotations.length);
       if (currentTab?.id && currentAnnotations.length > 0) {
         try {
+          console.log('Webtero sidebar: Sending GET_NOT_FOUND_ANNOTATIONS to tab', currentTab.id);
           const notFoundResponse = await browser.tabs.sendMessage(currentTab.id, {
             type: 'GET_NOT_FOUND_ANNOTATIONS',
           });
+          console.log('Webtero sidebar: GET_NOT_FOUND_ANNOTATIONS response:', notFoundResponse);
           if (notFoundResponse?.success && notFoundResponse.data?.notFoundIds) {
             const notFoundIds = new Set(notFoundResponse.data.notFoundIds);
+            console.log('Webtero sidebar: Not found IDs:', Array.from(notFoundIds));
             currentAnnotations = currentAnnotations.map((ann) => ({
               ...ann,
               notFound: notFoundIds.has(ann.id),
             }));
+            console.log('Webtero sidebar: Updated annotations with notFound status');
           }
         } catch (error) {
           // Content script may not be loaded yet, ignore
-          console.debug('Could not query not-found annotations:', error);
+          console.debug('Webtero sidebar: Could not query not-found annotations:', error);
         }
       }
 
@@ -226,6 +239,19 @@ async function displayPageStatus() {
     }
   }
 
+  // Check if there's an outbox annotation currently saving the page
+  const isSavingPage = currentOutboxAnnotations.some(
+    (ann) => ann.status === 'saving_page' || ann.status === 'saving_annotation'
+  );
+
+  if (isSavingPage) {
+    savePageBtn.disabled = true;
+    savePageBtn.textContent = 'Saving...';
+  } else {
+    savePageBtn.disabled = false;
+    savePageBtn.textContent = 'Save';
+  }
+
   if (currentPage) {
     // Show saved state with versions
     savedInfo.style.display = 'block';
@@ -234,9 +260,6 @@ async function displayPageStatus() {
     // Hide the redundant date/project text
     savedDate.style.display = 'none';
     savedProject.style.display = 'none';
-
-    // Update button text for adding snapshots
-    savePageBtn.textContent = 'Save';
 
     // Display versions list
     displayVersionsList();
@@ -248,7 +271,6 @@ async function displayPageStatus() {
     // First time saving
     savedInfo.style.display = 'none';
     savedIcon.style.display = 'none';
-    savePageBtn.textContent = 'Save';
     stopLiveVersionTimer();
 
     // Hide read progress for unsaved pages
@@ -275,11 +297,10 @@ function getRelativeTime(date: Date): string {
 // Start timer to update Live Version timestamp
 function startLiveVersionTimer() {
   stopLiveVersionTimer();
+  // Set initial value
+  liveVersionDate.textContent = getRelativeTime(pageLoadTime);
   liveVersionTimer = setInterval(() => {
-    const liveVersionDate = document.querySelector('.live-version .version-date');
-    if (liveVersionDate) {
-      liveVersionDate.textContent = getRelativeTime(pageLoadTime);
-    }
+    liveVersionDate.textContent = getRelativeTime(pageLoadTime);
   }, 10000); // Update every 10 seconds
 }
 
@@ -291,21 +312,15 @@ function stopLiveVersionTimer() {
   }
 }
 
-// Display versions list (Live + Snapshots)
+// Display versions list (snapshots only - Live Version is always shown in HTML)
 function displayVersionsList() {
   if (!currentPage) return;
 
-  let html = `
-    <div class="version live-version active">
-      <span class="version-icon">&#9679;</span>
-      <span class="version-label">Live Version</span>
-      <span class="version-date">${getRelativeTime(pageLoadTime)}</span>
-    </div>
-  `;
-
-  // Add snapshots
+  // Show/hide snapshots section based on whether there are any
   if (currentSnapshots.length > 0) {
-    html += currentSnapshots
+    versionsSection.style.display = 'block';
+
+    const html = currentSnapshots
       .map(
         (snapshot) => `
         <div class="version snapshot" data-key="${snapshot.key}" data-item-key="${currentPage?.zoteroItemKey}">
@@ -317,27 +332,29 @@ function displayVersionsList() {
       )
       .join('');
 
-    // Show "Show all annotations" button if there are snapshots
-    showAllAnnotationsBtn.style.display = 'block';
-    showAllAnnotationsBtn.textContent = showingAllAnnotations
+    versionsList.innerHTML = html;
+
+    // Show "All" toggle button in Annotations header if there are snapshots
+    showAllAnnotationsBtn.style.display = 'inline-block';
+    showAllAnnotationsBtn.classList.toggle('active', showingAllAnnotations);
+    showAllAnnotationsBtn.title = showingAllAnnotations
       ? 'Show current annotations only'
-      : 'Show all annotations';
+      : 'Show all annotations from snapshots';
+
+    // Add click handlers for snapshots
+    versionsList.querySelectorAll('.snapshot').forEach((el) => {
+      el.addEventListener('click', () => {
+        const snapshotKey = (el as HTMLElement).dataset.key;
+        const itemKey = (el as HTMLElement).dataset.itemKey;
+        if (snapshotKey && itemKey) {
+          openSnapshotInReader(itemKey, snapshotKey);
+        }
+      });
+    });
   } else {
+    versionsSection.style.display = 'none';
     showAllAnnotationsBtn.style.display = 'none';
   }
-
-  versionsList.innerHTML = html;
-
-  // Add click handlers for snapshots
-  versionsList.querySelectorAll('.snapshot').forEach((el) => {
-    el.addEventListener('click', () => {
-      const snapshotKey = (el as HTMLElement).dataset.key;
-      const itemKey = (el as HTMLElement).dataset.itemKey;
-      if (snapshotKey && itemKey) {
-        openSnapshotInReader(itemKey, snapshotKey);
-      }
-    });
-  });
 }
 
 // Open a snapshot in Zotero Web Library Reader
@@ -697,7 +714,27 @@ async function retryOutboxAnnotation(id: string) {
 }
 
 // Refresh annotations
-refreshAnnotations.addEventListener('click', loadPageData);
+refreshAnnotations.addEventListener('click', async () => {
+  console.log('Webtero sidebar: Refresh annotations clicked');
+
+  // First, try to retry any not-found highlights in the content script
+  if (currentTab?.id) {
+    try {
+      console.log('Webtero sidebar: Sending RETRY_NOT_FOUND_HIGHLIGHTS to tab', currentTab.id);
+      const retryResult = await browser.tabs.sendMessage(currentTab.id, {
+        type: 'RETRY_NOT_FOUND_HIGHLIGHTS',
+      });
+      console.log('Webtero sidebar: RETRY_NOT_FOUND_HIGHLIGHTS result:', retryResult);
+    } catch (error) {
+      // Content script may not be loaded, ignore
+      console.debug('Webtero sidebar: Could not retry not-found highlights:', error);
+    }
+  }
+
+  // Then reload the page data to refresh the UI
+  console.log('Webtero sidebar: Calling loadPageData after retry');
+  await loadPageData();
+});
 
 // Load and display projects
 async function loadProjects() {
@@ -1220,10 +1257,15 @@ browser.runtime.onMessage.addListener((message) => {
 });
 
 // Show all annotations button handler
-showAllAnnotationsBtn.addEventListener('click', async () => {
+showAllAnnotationsBtn.addEventListener('click', async (e) => {
+  e.stopPropagation(); // Prevent details toggle
   if (!currentTab?.id || !currentPage) return;
 
   showingAllAnnotations = !showingAllAnnotations;
+  showAllAnnotationsBtn.classList.toggle('active', showingAllAnnotations);
+  showAllAnnotationsBtn.title = showingAllAnnotations
+    ? 'Show current annotations only'
+    : 'Show all annotations from snapshots';
 
   if (showingAllAnnotations) {
     // Fetch all annotations from all snapshots
@@ -1256,8 +1298,6 @@ showAllAnnotationsBtn.addEventListener('click', async () => {
     } catch (error) {
       console.error('Failed to load all annotations:', error);
     }
-
-    showAllAnnotationsBtn.textContent = 'Show current annotations only';
   } else {
     // Remove historical highlights and show only current annotations
     try {
@@ -1269,6 +1309,5 @@ showAllAnnotationsBtn.addEventListener('click', async () => {
     }
 
     displayAnnotations(currentAnnotations);
-    showAllAnnotationsBtn.textContent = 'Show all annotations';
   }
 });
