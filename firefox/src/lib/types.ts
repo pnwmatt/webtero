@@ -50,6 +50,7 @@ export interface Snapshot {
 export interface AuthData {
   apiKey: string;
   userID: string;
+  username?: string;
 }
 
 /**
@@ -115,6 +116,21 @@ export interface OutboxAnnotation {
   error?: string;
 }
 
+/**
+ * User-configurable settings
+ */
+export interface Settings {
+  // Show [wt X%] indicators on links to saved pages
+  linkIndicatorsEnabled: boolean;
+  // Track and display reading progress
+  readingProgressEnabled: boolean;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  linkIndicatorsEnabled: true,
+  readingProgressEnabled: true,
+};
+
 export interface StorageData {
   auth?: AuthData;
   pages: Record<string, SavedPage>;
@@ -129,6 +145,8 @@ export interface StorageData {
   autoSaveTabs: Record<number, AutoSaveTab>;
   // Annotations queued for upload (keyed by annotation ID)
   outboxAnnotations: Record<string, OutboxAnnotation>;
+  // User settings
+  settings?: Settings;
 }
 
 // Zotero API types
@@ -247,4 +265,5 @@ export interface MessageResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  settings?: Partial<Settings>;
 }

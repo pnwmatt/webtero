@@ -212,6 +212,7 @@ export async function onAuthorizationComplete(queryString: string): Promise<void
     await storage.setAuth({
       apiKey,
       userID,
+      username,
     });
 
     const result: OAuthUserInfo = {

@@ -8,7 +8,9 @@ import type {
   PageLink,
   AutoSaveTab,
   OutboxAnnotation,
+  Settings,
 } from './types';
+import { DEFAULT_SETTINGS } from './types';
 
 const LOG_LEVEL = 0;
 
@@ -314,6 +316,24 @@ class Storage {
       outbox[id].error = error;
       await this.set('outboxAnnotations', outbox);
     }
+  }
+
+  // Settings operations
+  async getSettings(): Promise<Settings> {
+    const settings = await this.get('settings');
+    // Return defaults merged with any saved settings
+    return { ...DEFAULT_SETTINGS, ...settings };
+  }
+
+  async saveSettings(settings: Settings): Promise<void> {
+    await this.set('settings', settings);
+  }
+
+  async updateSettings(partial: Partial<Settings>): Promise<Settings> {
+    const current = await this.getSettings();
+    const updated = { ...current, ...partial };
+    await this.saveSettings(updated);
+    return updated;
   }
 
   // Utility

@@ -1,9 +1,13 @@
-import type { SavedPage, Annotation, Project, Snapshot, OutboxAnnotation } from '../lib/types';
+import type { SavedPage, Annotation, Project, Snapshot, OutboxAnnotation, Settings } from '../lib/types';
+import { DEFAULT_SETTINGS } from '../lib/types';
 import { storage } from '../lib/storage';
 import { formatDate } from '../lib/utils';
 import { config } from '../lib/config';
 
 const LOG_LEVEL = 0;
+
+// Cached settings (loaded on init)
+let cachedSettings: Settings = DEFAULT_SETTINGS;
 
 // DOM elements - Sign-in overlay
 const signInOverlay = document.getElementById('signInOverlay') as HTMLDivElement;
@@ -407,7 +411,7 @@ async function openSnapshotInReader(itemKey: string, snapshotKey: string) {
 
     // Build Web Library reader URL
     // Format: https://www.zotero.org/{username}/items/{itemKey}/attachment/{snapshotKey}/reader
-    const readerUrl = `https://www.zotero.org/users/${auth.userID}/items/${itemKey}/attachment/${snapshotKey}/reader`;
+    const readerUrl = `https://www.zotero.org/users/${auth.username}/items/${itemKey}/attachment/${snapshotKey}/reader`;
     await browser.tabs.create({ url: readerUrl });
   } catch (error) {
     console.error('Failed to open snapshot in reader:', error);
@@ -1109,21 +1113,25 @@ async function enableAutoSaveAndTracking(tabId: number, itemKey: string, url: st
       data: { tabId, sourceItemKey: itemKey, sourceUrl: url },
     });
 
-    // Tell content script to start focus tracking and enable auto-save mode
-    await browser.tabs.sendMessage(tabId, {
-      type: 'START_FOCUS_TRACKING',
-      data: { itemKey },
-    });
+    // Tell content script to start focus tracking (if enabled)
+    if (cachedSettings.readingProgressEnabled) {
+      await browser.tabs.sendMessage(tabId, {
+        type: 'START_FOCUS_TRACKING',
+        data: { itemKey },
+      });
+    }
 
     await browser.tabs.sendMessage(tabId, {
       type: 'ENABLE_AUTO_SAVE_MODE',
       data: { itemKey },
     });
 
-    // Enable link indicators
-    await browser.tabs.sendMessage(tabId, {
-      type: 'ENABLE_LINK_INDICATORS',
-    });
+    // Enable link indicators (if enabled)
+    if (cachedSettings.linkIndicatorsEnabled) {
+      await browser.tabs.sendMessage(tabId, {
+        type: 'ENABLE_LINK_INDICATORS',
+      });
+    }
 
     if (LOG_LEVEL > 0) console.log('Auto-save and tracking enabled for tab', tabId);
   } catch (error) {
@@ -1135,7 +1143,8 @@ async function enableAutoSaveAndTracking(tabId: number, itemKey: string, url: st
  * Update the read progress indicator
  */
 async function updateReadProgress() {
-  if (!currentPage?.zoteroItemKey) {
+  // Hide if reading progress is disabled or no page
+  if (!cachedSettings.readingProgressEnabled || !currentPage?.zoteroItemKey) {
     readProgress.style.display = 'none';
     return;
   }
@@ -1165,16 +1174,20 @@ async function checkAndEnableTracking() {
   if (!currentTab?.id || !currentPage?.zoteroItemKey) return;
 
   try {
-    // Start focus tracking for saved pages
-    await browser.tabs.sendMessage(currentTab.id, {
-      type: 'START_FOCUS_TRACKING',
-      data: { itemKey: currentPage.zoteroItemKey },
-    });
+    // Start focus tracking for saved pages (if enabled)
+    if (cachedSettings.readingProgressEnabled) {
+      await browser.tabs.sendMessage(currentTab.id, {
+        type: 'START_FOCUS_TRACKING',
+        data: { itemKey: currentPage.zoteroItemKey },
+      });
+    }
 
-    // Enable link indicators
-    await browser.tabs.sendMessage(currentTab.id, {
-      type: 'ENABLE_LINK_INDICATORS',
-    });
+    // Enable link indicators (if enabled)
+    if (cachedSettings.linkIndicatorsEnabled) {
+      await browser.tabs.sendMessage(currentTab.id, {
+        type: 'ENABLE_LINK_INDICATORS',
+      });
+    }
   } catch (error) {
     // Content script may not be loaded yet
     console.debug('Could not enable tracking:', error);
@@ -1364,10 +1377,18 @@ function displayLinks(links: LinkedPage[]) {
     // Create indicator span
     const indicator = document.createElement('span');
     indicator.className = 'link-indicator';
-    indicator.appendChild(document.createTextNode(`[wt ${link.readPercentage}%`));
+    // Only show percentage if reading progress is enabled
+    if (cachedSettings.readingProgressEnabled) {
+      indicator.appendChild(document.createTextNode(`[wt ${link.readPercentage}%`));
+    } else {
+      indicator.appendChild(document.createTextNode('[wt'));
+    }
 
     // Add color blocks
     if (link.annotationColors.length > 0) {
+      if (!cachedSettings.readingProgressEnabled) {
+        indicator.appendChild(document.createTextNode(' '));
+      }
       for (const color of link.annotationColors) {
         const block = document.createElement('span');
         block.className = 'color-block';
@@ -1422,6 +1443,9 @@ function truncateUrl(url: string): string {
  * Check authentication status and show appropriate UI
  */
 async function checkAuthAndInitialize(): Promise<void> {
+  // Load settings first
+  cachedSettings = await storage.getSettings();
+
   // If OAuth is enabled, check if user is authenticated
   if (config.features.oauthEnabled) {
     const auth = await storage.getAuth();
@@ -1473,6 +1497,22 @@ async function handleSignIn(): Promise<void> {
 
 // Sign-in button handler
 signInBtn.addEventListener('click', handleSignIn);
+
+// Listen for storage changes (e.g., credentials cleared from options page)
+browser.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && changes.auth) {
+    // Auth data changed - re-check authentication
+    checkAuthAndInitialize();
+  }
+  if (areaName === 'local' && changes.settings) {
+    // Settings changed - reload cached settings
+    storage.getSettings().then((settings) => {
+      cachedSettings = settings;
+      // Refresh page data to apply new settings
+      loadPageData();
+    });
+  }
+});
 
 // Initialize
 checkAuthAndInitialize();

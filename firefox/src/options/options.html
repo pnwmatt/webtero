@@ -20,21 +20,27 @@
 
         <div class="status" id="status"></div>
 
+        <!-- OAuth sign-in button -->
+        <div class="oauth-section">
+          <button type="button" id="oauthSignInBtn" class="oauth-btn">Sign in with Zotero</button>
+          <p id="oauthError" class="oauth-error"></p>
+        </div>
+
+        <div class="auth-divider">
+          <span>or enter credentials manually</span>
+        </div>
+
         <form id="authForm">
           <div class="form-group">
-            <label for="apiKey">API Key:</label>
+            <label for="username">Username:</label>
             <input
               type="text"
-              id="apiKey"
-              name="apiKey"
-              placeholder="Enter your Zotero API key"
+              id="username"
+              name="username"
+              placeholder="Zotero username"
+              readonly
             >
-            <small>
-              Get your API key from
-              <a href="https://www.zotero.org/settings/keys" target="_blank">
-                zotero.org/settings/keys
-              </a>
-            </small>
+            <small>Your Zotero username (set automatically via OAuth)</small>
           </div>
 
           <div class="form-group">
@@ -54,11 +60,60 @@
             </small>
           </div>
 
+          <div class="form-group">
+            <label for="apiKey">API Key:</label>
+            <input
+              type="text"
+              id="apiKey"
+              name="apiKey"
+              placeholder="Enter your Zotero API key"
+            >
+            <small>
+              Get your API key from
+              <a href="https://www.zotero.org/settings/keys" target="_blank">
+                zotero.org/settings/keys
+              </a>
+            </small>
+          </div>
+
           <div class="form-actions">
             <button type="submit" id="saveBtn">Save Credentials</button>
             <button type="button" id="clearBtn">Clear Credentials</button>
           </div>
         </form>
+      </section>
+
+      <section class="sync-section">
+        <h2>Library Sync</h2>
+        <p class="section-description">Sync your Zotero collections (projects) with the extension.</p>
+        <div class="form-actions">
+          <button type="button" id="syncProjectsBtn">Sync Projects</button>
+        </div>
+        <div id="syncStatus" class="sync-status"></div>
+      </section>
+
+      <section class="settings-section">
+        <h2>Display Settings</h2>
+
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <input type="checkbox" id="linkIndicatorsEnabled" checked>
+            <span class="toggle-text">
+              <strong>Link indicators</strong>
+              <small>Show [wt X%] badges on links to saved pages</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <input type="checkbox" id="readingProgressEnabled" checked>
+            <span class="toggle-text">
+              <strong>Reading progress</strong>
+              <small>Track and display how much of each page you have read</small>
+            </span>
+          </label>
+        </div>
       </section>
     </main>
   </div>

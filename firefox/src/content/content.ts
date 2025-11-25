@@ -255,6 +255,7 @@ interface SavedUrlInfo {
 let savedUrls: SavedUrlInfo[] = [];
 let autoSaveEnabled = false;
 let sourceItemKey: string | null = null;
+let readingProgressEnabled = true; // Cached setting from background
 
 /**
  * Add indicators to links pointing to saved pages
@@ -314,7 +315,12 @@ function addLinkIndicators() {
  * Populate a link indicator element with text and color blocks using DOM manipulation
  */
 function populateLinkIndicator(indicator: HTMLElement, savedInfo: SavedUrlInfo): void {
-  indicator.appendChild(document.createTextNode(`[wt ${savedInfo.readPercentage}%`));
+  // Only show percentage if reading progress is enabled
+  if (readingProgressEnabled) {
+    indicator.appendChild(document.createTextNode(`[wt ${savedInfo.readPercentage}%`));
+  } else {
+    indicator.appendChild(document.createTextNode('[wt'));
+  }
 
   // Add color blocks
   if (savedInfo.annotationColors.length > 0) {
@@ -334,7 +340,12 @@ function populateLinkIndicator(indicator: HTMLElement, savedInfo: SavedUrlInfo):
  * Build tooltip text for link indicator
  */
 function buildIndicatorTooltip(info: SavedUrlInfo): string {
-  const parts = [`Saved to Webtero - ${info.readPercentage}% read`];
+  const parts: string[] = [];
+  if (readingProgressEnabled) {
+    parts.push(`Saved to Webtero - ${info.readPercentage}% read`);
+  } else {
+    parts.push('Saved to Webtero');
+  }
   if (info.annotationColors.length > 0) {
     parts.push(`${info.annotationColors.length} annotation${info.annotationColors.length === 1 ? '' : 's'}`);
   }
@@ -407,6 +418,10 @@ async function loadSavedUrlsAndIndicators() {
     const response = await browser.runtime.sendMessage({ type: 'GET_SAVED_URLS' });
     if (response.success && Array.isArray(response.data)) {
       savedUrls = response.data;
+      // Extract settings from response
+      if (response.settings?.readingProgressEnabled !== undefined) {
+        readingProgressEnabled = response.settings.readingProgressEnabled;
+      }
       addLinkIndicators();
     }
   } catch (error) {

@@ -988,6 +988,7 @@ async function handleGetPageLinks(data: {
 async function handleGetSavedUrls(): Promise<MessageResponse> {
   const pages = await storage.getAllPages();
   const allAnnotations = await storage.getAllAnnotations();
+  const settings = await storage.getSettings();
   const savedUrls: Array<{
     url: string;
     itemKey: string;
@@ -996,7 +997,9 @@ async function handleGetSavedUrls(): Promise<MessageResponse> {
   }> = [];
 
   for (const page of Object.values(pages)) {
-    const percentage = await storage.getReadPercentage(page.zoteroItemKey);
+    const percentage = settings.readingProgressEnabled
+      ? await storage.getReadPercentage(page.zoteroItemKey)
+      : 0;
 
     // Get annotation colors for this page
     const pageAnnotations = Object.values(allAnnotations).filter(
@@ -1012,7 +1015,11 @@ async function handleGetSavedUrls(): Promise<MessageResponse> {
     });
   }
 
-  return { success: true, data: savedUrls };
+  return {
+    success: true,
+    data: savedUrls,
+    settings: { readingProgressEnabled: settings.readingProgressEnabled },
+  };
 }
 
 // Clean up auto-save tabs when tabs are closed
