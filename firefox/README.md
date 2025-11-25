@@ -1,57 +1,74 @@
-# Webtero: Product Vision & Feature Set
+# Webtero
 
-**Tagline:** _Transform web research from scattered bookmarks into structured knowledge projects_. The missing Project Manager for Zotero.
+A Firefox extension that integrates web browsing with Zotero, enabling you to save pages, create annotations, and capture snapshots directly to your Zotero library.
 
----
+## Features
 
-## Executive Summary
+- Save web pages to Zotero collections with metadata extraction
+- Create text highlights with 8 annotation colors matching Zotero's palette
+- Attach notes to highlights
+- Capture full-page snapshots (via SingleFile)
+- Track reading progress and time spent on pages
+- OAuth authentication with Zotero Web API
+- Offline annotation queue with automatic sync
 
-Webtero bridges the gap between web browsing and academic research management by treating research as **living projects** rather than isolated saves. Built as a Firefox sidebar extension with direct Zotero Web integration, Webtero automatically captures browsing context, manages versioning, and organizes discoveries into structured collections - all while you read and annotate naturally.
+## Requirements
 
-## Core Value Proposition
+- Firefox 142.0 or later
+- Zotero account with API access
 
-For researchers, writers, and decision-makers who need to:
+## Building
 
-- Capture complex research trails without breaking flow
-- \* Organize dozens of sources into coherent projects
-- \* Revisit research exactly as it was, or monitor for changes
-- \* Annotate and categorize on the fly
+```bash
+pnpm install
+pnpm build
+```
 
-Webtero provides:
+For development with file watching:
 
-- Session-aware capture: Your browsing graph becomes your research graph
-- When you Webtero a page, it is captured using Zotero Connect's standard API, but enhanced with context, versioning, and annotations.
-- The sidebar allows for easy "journaling" comments and adding "annotations" which are Zotero native.
-- Don't need to highlight text to leave a comment.
-- Page % Read is tracked and stored as metadata to the Zotero object.
-- Time-travel capability: Can view the live page or back to prior snapshots.
-- Project-centric organization: Everything belongs to (zero or many) research goal(s) and comments are made more visible than in the native Zotero interface.
-- Frictionless annotation: Highlight → categorize → save in two clicks
+```bash
+pnpm watch
+```
 
----
+## Loading the Extension
 
-## Product Architecture
+After building, load the extension from the `dist/` directory:
 
-1. **Firefox Sidebar Extension** (Primary Interface)
+```bash
+cd dist
+web-ext run
+```
 
-   - List existing Projects and create new projects. Creating a new project can either attach to an existing Collection/Subcollection in Zotero or create a new Collection/Subcollection.
-   - Sidebar shows annotations, comments, and metadata for the current page (including how far you've read down the page).
-   - Automatically adds child pages clicked from the parent page
-   - Shows annotations and comments inline on pages that link to a Zotero'd page (or Domain)
-   - Puts a squigly line under links that are already in Zotero. Hovering over them shows info about the item in Zotero.
-   - Highlighting text (or clicking on the page) allows you to highlight or add an annotation in a Zotero compatible way.
-   - Data is stored in Local Storage for now but will need to use Zotero object constructs for eventual syncing.
+To lint the extension:
 
-Implementation notes:
+```bash
+cd dist
+web-ext lint
+```
 
-- No styling - absolutely minimal css for layout only.
-- Should sync with Zotero Web API to get Collections and Subcollections using my OAUTH
+## Project Structure
 
-3. **Zotero Integration Layer**
+```
+src/
+  background/    Background service worker (message routing, API calls)
+  content/       Content script (highlighting, toolbars, page tracking)
+  sidebar/       Sidebar UI (project browser, annotations, page info)
+  options/       Options page (authentication settings)
+  lib/           Shared utilities and types
+    types.ts     TypeScript interfaces (Project, Annotation, SavedPage)
+    utils.ts     Helper functions
+    zotero-api.ts Zotero Web API client
+```
 
-   - Projects = Zotero Collections/Subcollections
-   - Project Main Page = Standalone Note
-   - Uses a Standalone Note for metadata and configuration about the project. Call that "metadata.webtero" and store as a Standalone Note in the Collection.
-   - Captured pages = Items with snapshots via the Zotero Connect API
-   - Annotations = Child notes with highlights
-   - Journal/Comments = Standalone Notes using timestamped appends
+## Authentication
+
+The extension supports two authentication methods:
+
+1. OAuth (recommended) - Authenticate via Zotero's OAuth flow
+2. API Key - Manual entry of Zotero API credentials (used for local development - disabled for distribution)
+
+Configure authentication in the extension options page.
+
+## License
+
+See LICENSE file.

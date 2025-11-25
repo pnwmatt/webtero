@@ -1,0 +1,17 @@
+{
+  "version": {
+    "license": "GNU AGPLv3"
+  },
+  "categories": {
+    "firefox": [
+      "search"
+    ]
+  },
+  "requires_payment": false,
+  "homepage": {
+    "en-US": "https://github.com/pnwmatt/webtero"
+  },
+  "support_email": {
+    "en-US": "webtero@pnwmatt.com"
+  }
+}
