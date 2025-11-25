@@ -992,6 +992,43 @@ body {
 }
 
 /* ============================================
+   SAVE PROGRESS INDICATOR
+   ============================================ */
+
+.save-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem;
+  background: var(--accent-blue10);
+  border-radius: 4px;
+}
+
+.save-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--fill-quinary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.save-progress-fill {
+  height: 100%;
+  background: var(--accent-blue50);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+  width: 0%;
+}
+
+.save-progress-text {
+  font-size: 0.75rem;
+  color: var(--accent-blue50);
+  white-space: nowrap;
+  min-width: 70px;
+}
+
+/* ============================================
    OUTBOX ANNOTATIONS (pending upload)
    ============================================ */
 

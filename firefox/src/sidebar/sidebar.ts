@@ -39,6 +39,9 @@ const readProgressFill = document.getElementById('readProgressFill') as HTMLDivE
 const readProgressText = document.getElementById('readProgressText') as HTMLSpanElement;
 const liveVersionDate = document.getElementById('liveVersionDate') as HTMLSpanElement;
 const versionsSection = document.getElementById('versionsSection') as HTMLDivElement;
+const saveProgress = document.getElementById('saveProgress') as HTMLDivElement;
+const saveProgressFill = document.getElementById('saveProgressFill') as HTMLDivElement;
+const saveProgressText = document.getElementById('saveProgressText') as HTMLSpanElement;
 
 let currentTab: browser.tabs.Tab | null = null;
 let currentPage: SavedPage | null = null;
@@ -457,11 +460,39 @@ savePageBtn.addEventListener('click', async () => {
   if (!currentTab?.url || !currentTab?.title) return;
 
   savePageBtn.disabled = true;
-  savePageBtn.textContent = 'Saving...';
+  savePageBtn.style.display = 'none';
+
+  // Show progress bar
+  saveProgress.style.display = 'flex';
+  saveProgressFill.style.width = '0%';
+  saveProgressText.textContent = 'Creating item...';
+
+  // Animate progress through stages
+  let progressInterval: ReturnType<typeof setInterval> | null = null;
+  let currentProgress = 0;
+
+  const animateProgress = (targetProgress: number, text: string) => {
+    saveProgressText.textContent = text;
+    if (progressInterval) clearInterval(progressInterval);
+    progressInterval = setInterval(() => {
+      if (currentProgress < targetProgress) {
+        currentProgress += 1;
+        saveProgressFill.style.width = `${currentProgress}%`;
+      } else if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+    }, 30);
+  };
+
+  // Start progress animation
+  animateProgress(20, 'Creating item...');
 
   try {
     const selectedProject = projectDropdown.value;
     const collections = selectedProject ? [selectedProject] : [];
+
+    // Progress to capturing stage after short delay
+    setTimeout(() => animateProgress(50, 'Capturing page...'), 500);
 
     const response = await browser.runtime.sendMessage({
       type: 'SAVE_PAGE',
@@ -473,6 +504,9 @@ savePageBtn.addEventListener('click', async () => {
     });
 
     if (response.success) {
+      // Complete the progress bar
+      animateProgress(100, 'Saved!');
+
       const { itemKey } = response.data;
 
       // Enable auto-save mode and focus tracking for this tab
@@ -480,16 +514,26 @@ savePageBtn.addEventListener('click', async () => {
         await enableAutoSaveAndTracking(currentTab.id, itemKey, currentTab.url);
       }
 
-      await loadPageData();
+      // Wait for animation to complete before hiding
+      setTimeout(async () => {
+        saveProgress.style.display = 'none';
+        savePageBtn.style.display = 'block';
+        await loadPageData();
+      }, 600);
     } else {
+      if (progressInterval) clearInterval(progressInterval);
+      saveProgress.style.display = 'none';
+      savePageBtn.style.display = 'block';
       alert(`Failed to save page: ${response.error}`);
     }
   } catch (error) {
     console.error('Failed to save page:', error);
+    if (progressInterval) clearInterval(progressInterval);
+    saveProgress.style.display = 'none';
+    savePageBtn.style.display = 'block';
     alert('Failed to save page');
   } finally {
     savePageBtn.disabled = false;
-    // Restore appropriate button text based on state
     savePageBtn.textContent = 'Save';
   }
 });
@@ -1093,10 +1137,13 @@ function buildColorBlocksHtml(colors: string[]): string {
 
   const colorMap: Record<string, string> = {
     yellow: '#ffd400',
+    red: '#ff6666',
     green: '#5fb236',
     blue: '#2ea8e5',
-    pink: '#e56eee',
     purple: '#a28ae5',
+    magenta: '#e56eee',
+    orange: '#f19837',
+    gray: '#aaaaaa',
   };
 
   const blocks = colors.map((color) => {

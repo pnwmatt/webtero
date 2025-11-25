@@ -71,6 +71,14 @@
             <button id="savePageBtn" class="save-btn" title="Save to Zotero">Save</button>
           </div>
 
+          <!-- Save progress indicator (shown during save operation) -->
+          <div id="saveProgress" class="save-progress" style="display: none;">
+            <div class="save-progress-bar">
+              <div id="saveProgressFill" class="save-progress-fill"></div>
+            </div>
+            <span id="saveProgressText" class="save-progress-text">Saving...</span>
+          </div>
+
           <!-- Read progress indicator (shown for saved pages) -->
           <div id="readProgress" class="read-progress" style="display: none;">
             <div class="read-progress-bar">

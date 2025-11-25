@@ -1,6 +1,6 @@
 // Core data types for Webtero
 
-export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'purple';
+export type HighlightColor = 'yellow' | 'red' | 'green' | 'blue' | 'purple' | 'magenta' | 'orange' | 'gray';
 
 export interface Project {
   id: string; // Zotero collection key

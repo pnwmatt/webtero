@@ -102,18 +102,20 @@ export function normalizeUrl(url: string): string {
 
 /**
  * Get color CSS value from highlight color name
- * Colors are chosen to meet WCAG 2.0 AA contrast requirements (4.5:1)
- * for black text on the highlight background
+ * Colors match Zotero annotation colors from zotero-reader defines.js
+ * with slight transparency for better readability
  */
 export function getColorValue(color: string): string {
-  // Pastel colors that provide sufficient contrast with black text
-  // All colors tested to have >= 4.5:1 contrast ratio with #000000
+  // Zotero annotation colors (with alpha for transparency)
   const colors: Record<string, string> = {
-    yellow: '#fff59d', // Light yellow - contrast ~19.3:1
-    green: '#a5d6a7',  // Light green - contrast ~11.5:1
-    blue: '#90caf9',   // Light blue - contrast ~10.4:1
-    pink: '#f8bbd9',   // Light pink - contrast ~12.0:1
-    purple: '#ce93d8', // Light purple - contrast ~8.1:1
+    yellow: 'rgba(255, 212, 0, 0.5)',   // #ffd400
+    red: 'rgba(255, 102, 102, 0.5)',    // #ff6666
+    green: 'rgba(95, 178, 54, 0.5)',    // #5fb236
+    blue: 'rgba(46, 168, 229, 0.5)',    // #2ea8e5
+    purple: 'rgba(162, 138, 229, 0.5)', // #a28ae5
+    magenta: 'rgba(229, 110, 238, 0.5)', // #e56eee
+    orange: 'rgba(241, 152, 55, 0.5)',  // #f19837
+    gray: 'rgba(170, 170, 170, 0.5)',   // #aaaaaa
   };
   return colors[color] ?? colors.yellow;
 }

@@ -6,6 +6,97 @@ const LOG_LEVEL = 0;
 
 if (LOG_LEVEL > 0) console.log('Webtero content script loaded');
 
+// ============================================
+// CSS Custom Highlight API Support
+// ============================================
+
+// Feature detection for CSS Custom Highlight API (Firefox 132+, Chrome 105+)
+const CSS_HIGHLIGHT_SUPPORTED = typeof CSS !== 'undefined' && 'highlights' in CSS;
+
+if (LOG_LEVEL > 0) console.log('Webtero: CSS Custom Highlight API supported:', CSS_HIGHLIGHT_SUPPORTED);
+
+// Registry to track highlights by annotation ID
+// Maps annotationId -> { range: Range, color: HighlightColor }
+const highlightRegistry = new Map<string, { range: Range; color: HighlightColor }>();
+
+// CSS Highlight objects by color (shared across all annotations of same color)
+const cssHighlightsByColor = new Map<HighlightColor, Highlight>();
+
+// Initialize CSS highlights and inject styles
+function initCSSHighlights() {
+  if (!CSS_HIGHLIGHT_SUPPORTED) return;
+
+  const colors: HighlightColor[] = ['yellow', 'red', 'green', 'blue', 'purple', 'magenta', 'orange', 'gray'];
+  const highlights = (CSS as unknown as CSSWithHighlights).highlights;
+
+  // Create a Highlight object for each color
+  for (const color of colors) {
+    const highlight = new Highlight();
+    cssHighlightsByColor.set(color, highlight);
+    highlights.set(`webtero-${color}`, highlight);
+  }
+
+  // Also create highlights for historical annotations (with different styling)
+  for (const color of colors) {
+    const highlight = new Highlight();
+    cssHighlightsByColor.set(`historical-${color}` as HighlightColor, highlight);
+    highlights.set(`webtero-historical-${color}`, highlight);
+  }
+
+  // Inject CSS rules for ::highlight() pseudo-element
+  const style = document.createElement('style');
+  style.id = 'webtero-highlight-styles';
+  style.textContent = `
+    /* CSS Custom Highlight API styles - colors from Zotero */
+    ::highlight(webtero-yellow) { background-color: ${getColorValue('yellow')}; }
+    ::highlight(webtero-red) { background-color: ${getColorValue('red')}; }
+    ::highlight(webtero-green) { background-color: ${getColorValue('green')}; }
+    ::highlight(webtero-blue) { background-color: ${getColorValue('blue')}; }
+    ::highlight(webtero-purple) { background-color: ${getColorValue('purple')}; }
+    ::highlight(webtero-magenta) { background-color: ${getColorValue('magenta')}; }
+    ::highlight(webtero-orange) { background-color: ${getColorValue('orange')}; }
+    ::highlight(webtero-gray) { background-color: ${getColorValue('gray')}; }
+
+    /* Historical highlights - same colors but with text decoration for distinction */
+    ::highlight(webtero-historical-yellow) { background-color: ${getColorValue('yellow')}; text-decoration: underline dashed; }
+    ::highlight(webtero-historical-red) { background-color: ${getColorValue('red')}; text-decoration: underline dashed; }
+    ::highlight(webtero-historical-green) { background-color: ${getColorValue('green')}; text-decoration: underline dashed; }
+    ::highlight(webtero-historical-blue) { background-color: ${getColorValue('blue')}; text-decoration: underline dashed; }
+    ::highlight(webtero-historical-purple) { background-color: ${getColorValue('purple')}; text-decoration: underline dashed; }
+    ::highlight(webtero-historical-magenta) { background-color: ${getColorValue('magenta')}; text-decoration: underline dashed; }
+    ::highlight(webtero-historical-orange) { background-color: ${getColorValue('orange')}; text-decoration: underline dashed; }
+    ::highlight(webtero-historical-gray) { background-color: ${getColorValue('gray')}; text-decoration: underline dashed; }
+  `;
+  document.head.appendChild(style);
+}
+
+// TypeScript types for CSS Highlight API
+interface CSSWithHighlights {
+  highlights: HighlightRegistry;
+}
+
+interface HighlightRegistry {
+  set(name: string, highlight: Highlight): void;
+  get(name: string): Highlight | undefined;
+  delete(name: string): boolean;
+  clear(): void;
+}
+
+declare class Highlight {
+  constructor(...ranges: Range[]);
+  add(range: Range): void;
+  delete(range: Range): boolean;
+  clear(): void;
+  has(range: Range): boolean;
+  readonly size: number;
+  [Symbol.iterator](): IterableIterator<Range>;
+}
+
+// Initialize CSS highlights when script loads
+if (CSS_HIGHLIGHT_SUPPORTED) {
+  initCSSHighlights();
+}
+
 // Check for OAuth callback immediately on load
 handleOAuthCallback();
 
@@ -379,7 +470,9 @@ let currentSelection: {
 } | null = null;
 let currentEditHighlight: {
   id: string;
-  element: HTMLElement;
+  element: HTMLElement | null;  // null when using CSS Highlight API
+  range: Range | null;          // Used for CSS Highlight API
+  color: HighlightColor | null; // Current color for CSS highlights
 } | null = null;
 
 /**
@@ -462,7 +555,7 @@ function createHighlightToolbar(): { host: HTMLElement; inner: HTMLElement } {
   style.textContent = TOOLBAR_STYLES;
   shadow.appendChild(style);
 
-  const colors: HighlightColor[] = ['yellow', 'green', 'blue', 'pink', 'purple'];
+  const colors: HighlightColor[] = ['yellow', 'red', 'green', 'blue', 'purple', 'magenta', 'orange', 'gray'];
 
   const toolbar = document.createElement('div');
   toolbar.className = 'webtero-toolbar';
@@ -513,7 +606,7 @@ function createEditToolbar(): { host: HTMLElement; inner: HTMLElement } {
   style.textContent = TOOLBAR_STYLES;
   shadow.appendChild(style);
 
-  const colors: HighlightColor[] = ['yellow', 'green', 'blue', 'pink', 'purple'];
+  const colors: HighlightColor[] = ['yellow', 'red', 'green', 'blue', 'purple', 'magenta', 'orange', 'gray'];
 
   const toolbar = document.createElement('div');
   toolbar.className = 'webtero-toolbar';
@@ -595,6 +688,31 @@ function hideEditToolbar() {
 }
 
 /**
+ * Show edit toolbar at a specific point (for CSS highlights)
+ */
+function showEditToolbarAtPoint(clientX: number, clientY: number, currentColor: HighlightColor) {
+  if (!editToolbar) {
+    editToolbar = createEditToolbar();
+  }
+
+  editToolbar.host.style.left = `${clientX + window.scrollX}px`;
+  editToolbar.host.style.top = `${clientY + window.scrollY - 50}px`;
+  editToolbar.host.style.display = 'block';
+
+  // Mark current color as selected
+  editToolbar.inner.querySelectorAll('.webtero-color-btn').forEach((btn: Element) => {
+    const btnEl = btn as HTMLElement;
+    // Handle both regular and historical colors
+    const baseColor = (currentColor as string).replace('historical-', '');
+    if (btnEl.dataset.color === baseColor) {
+      btnEl.classList.add('selected');
+    } else {
+      btnEl.classList.remove('selected');
+    }
+  });
+}
+
+/**
  * Update highlight color
  */
 async function updateHighlightColor(color: HighlightColor) {
@@ -610,9 +728,23 @@ async function updateHighlightColor(color: HighlightColor) {
     });
 
     if (response.success) {
-      // Update visual
-      currentEditHighlight.element.style.backgroundColor = getColorValue(color);
-      currentEditHighlight.element.dataset.color = color;
+      // Update visual based on highlight type
+      if (CSS_HIGHLIGHT_SUPPORTED && currentEditHighlight.range && currentEditHighlight.color) {
+        // CSS Highlight API: move range from old color to new color
+        const oldHighlight = cssHighlightsByColor.get(currentEditHighlight.color);
+        const newHighlight = cssHighlightsByColor.get(color);
+        if (oldHighlight && newHighlight) {
+          oldHighlight.delete(currentEditHighlight.range);
+          newHighlight.add(currentEditHighlight.range);
+          // Update registry
+          highlightRegistry.set(currentEditHighlight.id, { range: currentEditHighlight.range, color });
+          currentEditHighlight.color = color;
+        }
+      } else if (currentEditHighlight.element) {
+        // DOM-based highlight
+        currentEditHighlight.element.style.backgroundColor = getColorValue(color);
+        currentEditHighlight.element.dataset.color = color;
+      }
       hideEditToolbar();
     } else {
       alert(`Failed to update highlight: ${response.error}`);
@@ -665,13 +797,23 @@ async function deleteHighlight() {
     });
 
     if (response.success) {
-      // Remove from DOM
-      const element = currentEditHighlight.element;
-      const parent = element.parentNode;
-      while (element.firstChild) {
-        parent?.insertBefore(element.firstChild, element);
+      // Remove highlight based on type
+      if (CSS_HIGHLIGHT_SUPPORTED && currentEditHighlight.range && currentEditHighlight.color) {
+        // CSS Highlight API: remove range from highlight
+        const highlight = cssHighlightsByColor.get(currentEditHighlight.color);
+        if (highlight) {
+          highlight.delete(currentEditHighlight.range);
+        }
+        highlightRegistry.delete(currentEditHighlight.id);
+      } else if (currentEditHighlight.element) {
+        // DOM-based highlight: unwrap the span
+        const element = currentEditHighlight.element;
+        const parent = element.parentNode;
+        while (element.firstChild) {
+          parent?.insertBefore(element.firstChild, element);
+        }
+        element.remove();
       }
-      element.remove();
       hideEditToolbar();
     } else {
       alert(`Failed to delete highlight: ${response.error}`);
@@ -798,9 +940,46 @@ async function createHighlight(color: HighlightColor, comment?: string) {
 }
 
 /**
- * Apply visual highlight to a range
+ * Apply visual highlight to a range using CSS Custom Highlight API if available,
+ * otherwise fall back to DOM manipulation
  */
 function applyVisualHighlight(range: Range, color: HighlightColor, id: string) {
+  if (CSS_HIGHLIGHT_SUPPORTED) {
+    applyVisualHighlightCSS(range, color, id);
+  } else {
+    applyVisualHighlightDOM(range, color, id);
+  }
+}
+
+/**
+ * Apply highlight using CSS Custom Highlight API (non-destructive)
+ */
+function applyVisualHighlightCSS(range: Range, color: HighlightColor, id: string) {
+  // Clone the range to avoid issues if original range gets invalidated
+  const clonedRange = range.cloneRange();
+
+  // Get the Highlight object for this color
+  const highlight = cssHighlightsByColor.get(color);
+  if (!highlight) {
+    console.warn('Webtero: No CSS Highlight object for color:', color);
+    // Fall back to DOM approach
+    applyVisualHighlightDOM(range, color, id);
+    return;
+  }
+
+  // Add range to the highlight
+  highlight.add(clonedRange);
+
+  // Register in our tracking map
+  highlightRegistry.set(id, { range: clonedRange, color });
+
+  if (LOG_LEVEL > 0) console.log(`Webtero: Applied CSS highlight ${id} with color ${color}`);
+}
+
+/**
+ * Apply highlight using DOM manipulation (fallback for older browsers)
+ */
+function applyVisualHighlightDOM(range: Range, color: HighlightColor, id: string) {
   const span = document.createElement('span');
   span.className = 'webtero-highlight';
   span.dataset.highlightId = id;
@@ -1119,6 +1298,46 @@ document.addEventListener('selectionchange', () => {
   }
 });
 
+/**
+ * Find if click position is within any CSS highlight range
+ * Returns the annotation ID and range if found
+ */
+function findCSSHighlightAtPoint(x: number, y: number): { id: string; range: Range; color: HighlightColor } | null {
+  // Get the position from coordinates
+  const caretPos = document.caretPositionFromPoint?.(x, y) ||
+                   (document as { caretRangeFromPoint?: (x: number, y: number) => Range | null }).caretRangeFromPoint?.(x, y);
+
+  if (!caretPos) return null;
+
+  // Create a collapsed range at the click point
+  let clickRange: Range;
+  if ('offsetNode' in caretPos) {
+    // caretPositionFromPoint result
+    clickRange = document.createRange();
+    clickRange.setStart(caretPos.offsetNode, caretPos.offset);
+    clickRange.setEnd(caretPos.offsetNode, caretPos.offset);
+  } else {
+    // caretRangeFromPoint result (is already a Range)
+    clickRange = caretPos;
+  }
+
+  // Check if the click point is within any of our registered highlights
+  for (const [id, entry] of highlightRegistry.entries()) {
+    const range = entry.range;
+    // Check if click is within this range
+    // compareBoundaryPoints: -1 = before, 0 = equal, 1 = after
+    const startComparison = range.compareBoundaryPoints(Range.START_TO_START, clickRange);
+    const endComparison = range.compareBoundaryPoints(Range.END_TO_END, clickRange);
+
+    // Click is within range if: range starts before or at click AND range ends at or after click
+    if (startComparison <= 0 && endComparison >= 0) {
+      return { id, range: entry.range, color: entry.color };
+    }
+  }
+
+  return null;
+}
+
 // Handle clicks on highlights to show edit toolbar
 document.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
@@ -1132,7 +1351,7 @@ document.addEventListener('click', (e) => {
     return;
   }
 
-  // If clicking on a highlight, check if there's an underlying link
+  // First check for DOM-based highlights
   if (highlightElement && highlightElement.dataset.highlightId) {
     // Check if the click target or any ancestor (up to highlight) is a link
     const linkElement = target.closest('a[href]');
@@ -1153,16 +1372,45 @@ document.addEventListener('click', (e) => {
       return;
     }
 
-    // No link involved - show edit toolbar
+    // No link involved - show edit toolbar for DOM highlight
     e.preventDefault();
     e.stopPropagation();
     hideHighlightToolbar();
     currentEditHighlight = {
       id: highlightElement.dataset.highlightId,
       element: highlightElement,
+      range: null,
+      color: highlightElement.dataset.color as HighlightColor || null,
     };
     showEditToolbar(highlightElement);
     return;
+  }
+
+  // Check for CSS-based highlights if API is supported
+  if (CSS_HIGHLIGHT_SUPPORTED) {
+    const cssHighlight = findCSSHighlightAtPoint(e.clientX, e.clientY);
+    if (cssHighlight) {
+      // Check if clicking a link
+      const linkElement = target.closest('a[href]');
+      if (linkElement) {
+        hideHighlightToolbar();
+        hideEditToolbar();
+        return;
+      }
+
+      // Show edit toolbar for CSS highlight
+      e.preventDefault();
+      e.stopPropagation();
+      hideHighlightToolbar();
+      currentEditHighlight = {
+        id: cssHighlight.id,
+        element: null,
+        range: cssHighlight.range,
+        color: cssHighlight.color,
+      };
+      showEditToolbarAtPoint(e.clientX, e.clientY, cssHighlight.color);
+      return;
+    }
   }
 
   // Otherwise, hide toolbars if no text selected
@@ -1376,8 +1624,9 @@ function applyHistoricalAnnotations(annotations: Annotation[]): { notFoundIds: s
   const notFoundIds: string[] = [];
 
   for (const annotation of annotations) {
-    // Skip if already applied (from current page annotations)
-    if (document.querySelector(`.webtero-highlight[data-highlight-id="${annotation.id}"]`)) {
+    // Skip if already applied - check both CSS registry and DOM
+    if (highlightRegistry.has(annotation.id) ||
+        document.querySelector(`.webtero-highlight[data-highlight-id="${annotation.id}"]`)) {
       continue;
     }
 
@@ -1391,7 +1640,7 @@ function applyHistoricalAnnotations(annotations: Annotation[]): { notFoundIds: s
 }
 
 /**
- * Apply a stored highlight from annotation data
+ * Apply a stored highlight from annotation data (historical)
  * Returns true if successful, false if the text could not be found
  */
 function applyStoredHighlightWithCheck(annotation: Annotation): boolean {
@@ -1421,23 +1670,11 @@ function applyStoredHighlightWithCheck(annotation: Annotation): boolean {
       return false;
     }
 
-    // Apply visual highlight with historical marker
-    // Use dashed border instead of opacity to maintain WCAG contrast
-    const span = document.createElement('span');
-    span.className = 'webtero-highlight webtero-historical-highlight';
-    span.dataset.highlightId = annotation.id;
-    span.dataset.color = annotation.color;
-    span.dataset.historical = 'true';
-    span.style.backgroundColor = getColorValue(annotation.color);
-    span.style.borderBottom = '2px dashed currentColor'; // Visual distinction without reducing contrast
-
-    try {
-      range.surroundContents(span);
-    } catch (error) {
-      console.warn('Could not apply historical highlight directly:', error);
-      const contents = range.extractContents();
-      span.appendChild(contents);
-      range.insertNode(span);
+    // Apply highlight - use CSS API if available
+    if (CSS_HIGHLIGHT_SUPPORTED) {
+      applyHistoricalHighlightCSS(range, annotation.color, annotation.id);
+    } else {
+      applyHistoricalHighlightDOM(range, annotation.color, annotation.id);
     }
 
     return true;
@@ -1448,9 +1685,69 @@ function applyStoredHighlightWithCheck(annotation: Annotation): boolean {
 }
 
 /**
+ * Apply historical highlight using CSS Custom Highlight API
+ */
+function applyHistoricalHighlightCSS(range: Range, color: HighlightColor, id: string) {
+  const clonedRange = range.cloneRange();
+  const historicalColor = `historical-${color}` as HighlightColor;
+
+  const highlight = cssHighlightsByColor.get(historicalColor);
+  if (!highlight) {
+    console.warn('Webtero: No CSS Highlight object for historical color:', historicalColor);
+    applyHistoricalHighlightDOM(range, color, id);
+    return;
+  }
+
+  highlight.add(clonedRange);
+  highlightRegistry.set(id, { range: clonedRange, color: historicalColor });
+
+  if (LOG_LEVEL > 0) console.log(`Webtero: Applied historical CSS highlight ${id} with color ${color}`);
+}
+
+/**
+ * Apply historical highlight using DOM manipulation (fallback)
+ */
+function applyHistoricalHighlightDOM(range: Range, color: HighlightColor, id: string) {
+  const span = document.createElement('span');
+  span.className = 'webtero-highlight webtero-historical-highlight';
+  span.dataset.highlightId = id;
+  span.dataset.color = color;
+  span.dataset.historical = 'true';
+  span.style.backgroundColor = getColorValue(color);
+  span.style.borderBottom = '2px dashed currentColor'; // Visual distinction without reducing contrast
+
+  try {
+    range.surroundContents(span);
+  } catch (error) {
+    console.warn('Could not apply historical highlight directly:', error);
+    const contents = range.extractContents();
+    span.appendChild(contents);
+    range.insertNode(span);
+  }
+}
+
+/**
  * Remove all historical annotations from the page
  */
 function removeHistoricalAnnotations() {
+  if (CSS_HIGHLIGHT_SUPPORTED) {
+    // Remove from CSS registry
+    const idsToRemove: string[] = [];
+    for (const [id, entry] of highlightRegistry.entries()) {
+      if ((entry.color as string).startsWith('historical-')) {
+        const highlight = cssHighlightsByColor.get(entry.color);
+        if (highlight) {
+          highlight.delete(entry.range);
+        }
+        idsToRemove.push(id);
+      }
+    }
+    for (const id of idsToRemove) {
+      highlightRegistry.delete(id);
+    }
+  }
+
+  // Also clean up any DOM-based historical highlights (fallback or mixed mode)
   const historicalHighlights = document.querySelectorAll('.webtero-historical-highlight');
   historicalHighlights.forEach((el) => {
     const parent = el.parentNode;
@@ -1570,7 +1867,20 @@ browser.runtime.onMessage.addListener((message, sender) => {
   // Outbox annotation updates
   if (message.type === 'OUTBOX_ANNOTATION_COMPLETED') {
     const { id, annotation } = message.data;
-    // Remove pending state from the highlight
+
+    // Handle CSS-based highlights
+    if (CSS_HIGHLIGHT_SUPPORTED && highlightRegistry.has(id)) {
+      // Update the registry with the new annotation ID
+      if (annotation?.id && annotation.id !== id) {
+        const entry = highlightRegistry.get(id);
+        if (entry) {
+          highlightRegistry.delete(id);
+          highlightRegistry.set(annotation.id, entry);
+        }
+      }
+    }
+
+    // Handle DOM-based highlights
     const highlight = document.querySelector(
       `.webtero-highlight[data-highlight-id="${id}"]`
     ) as HTMLElement;
@@ -1587,6 +1897,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
 
   if (message.type === 'OUTBOX_ANNOTATION_UPDATED') {
     const annotation = message.data;
+    // CSS highlights don't have visual failed state, but DOM highlights do
     const highlight = document.querySelector(
       `.webtero-highlight[data-highlight-id="${annotation.id}"]`
     ) as HTMLElement;
@@ -1604,15 +1915,32 @@ browser.runtime.onMessage.addListener((message, sender) => {
  * Scroll to a highlight and briefly flash it
  */
 function scrollToHighlight(id: string) {
-  const highlight = document.querySelector(
+  // First check DOM-based highlights
+  const domHighlight = document.querySelector(
     `.webtero-highlight[data-highlight-id="${id}"]`
   ) as HTMLElement;
 
-  if (!highlight) {
-    console.warn('Highlight not found:', id);
+  if (domHighlight) {
+    scrollToAndFlashDOMHighlight(domHighlight);
     return;
   }
 
+  // Check CSS-based highlights
+  if (CSS_HIGHLIGHT_SUPPORTED) {
+    const entry = highlightRegistry.get(id);
+    if (entry) {
+      scrollToAndFlashCSSHighlight(entry.range, entry.color);
+      return;
+    }
+  }
+
+  console.warn('Highlight not found:', id);
+}
+
+/**
+ * Scroll to and flash a DOM-based highlight
+ */
+function scrollToAndFlashDOMHighlight(highlight: HTMLElement) {
   // Scroll into view
   highlight.scrollIntoView({
     behavior: 'smooth',
@@ -1632,6 +1960,48 @@ function scrollToHighlight(id: string) {
         setTimeout(() => {
           highlight.style.outline = '';
           highlight.style.transition = '';
+        }, 150);
+      }, 150);
+    }, 150);
+  };
+
+  // Start flash after scroll completes
+  setTimeout(flash, 300);
+}
+
+/**
+ * Scroll to and flash a CSS-based highlight
+ */
+function scrollToAndFlashCSSHighlight(range: Range, color: HighlightColor) {
+  // Get the bounding rect of the range to scroll to
+  const rects = range.getClientRects();
+  if (rects.length === 0) {
+    console.warn('CSS highlight range has no rects');
+    return;
+  }
+
+  // Scroll to the first rect
+  const firstRect = rects[0];
+  const scrollY = window.scrollY + firstRect.top - window.innerHeight / 2;
+  window.scrollTo({
+    top: scrollY,
+    behavior: 'smooth',
+  });
+
+  // For CSS highlights, we can flash by temporarily removing and re-adding to highlight
+  // Or use Selection API to visually indicate
+  const highlight = cssHighlightsByColor.get(color);
+  if (!highlight) return;
+
+  // Flash by briefly removing from highlight and re-adding
+  const flash = () => {
+    highlight.delete(range);
+    setTimeout(() => {
+      highlight.add(range);
+      setTimeout(() => {
+        highlight.delete(range);
+        setTimeout(() => {
+          highlight.add(range);
         }, 150);
       }, 150);
     }, 150);
