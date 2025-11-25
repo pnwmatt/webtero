@@ -52,8 +52,16 @@ let showingAllAnnotations = false;
 let pageLoadTime: Date = new Date();
 let liveVersionTimer: ReturnType<typeof setInterval> | null = null;
 
-// Highlight icon SVG (from zotero-reader)
-const HIGHLIGHT_ICON = `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.7 13.4c-.1.1-.2.3-.2.5 0 .4.3.7.7.7.2 0 .4-.1.5-.2l5.8-5.8-1-1-5.8 5.8zM13 3.9l-.9-.9c-.4-.4-1-.4-1.4 0l-1.2 1.2 2.3 2.3 1.2-1.2c.4-.4.4-1 0-1.4zM4.5 7.7l2.3 2.3 4.6-4.6-2.3-2.3-4.6 4.6z"/></svg>`;
+// Create highlight icon SVG element (from zotero-reader)
+function createHighlightIcon(): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('fill', 'currentColor');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'M2.7 13.4c-.1.1-.2.3-.2.5 0 .4.3.7.7.7.2 0 .4-.1.5-.2l5.8-5.8-1-1-5.8 5.8zM13 3.9l-.9-.9c-.4-.4-1-.4-1.4 0l-1.2 1.2 2.3 2.3 1.2-1.2c.4-.4.4-1 0-1.4zM4.5 7.7l2.3 2.3 4.6-4.6-2.3-2.3-4.6 4.6z');
+  svg.appendChild(path);
+  return svg;
+}
 
 /**
  * Check if URL is a restricted page where Webtero cannot operate
@@ -122,19 +130,19 @@ async function getCurrentTab(): Promise<browser.tabs.Tab | null> {
 async function loadPageData() {
   currentTab = await getCurrentTab();
   if (!currentTab?.url) {
-    pageStatus.innerHTML = '<p class="error">No active tab</p>';
+    setPageStatusError('No active tab');
     return;
   }
 
   // Check if on restricted page
   if (isRestrictedUrl(currentTab.url)) {
     pageStatus.style.display = 'block';
-    pageStatus.innerHTML = '<p class="empty">Webtero is not available on this site.</p>';
+    setEmptyMessage(pageStatus, 'Webtero is not available on this site.');
     pageActions.style.display = 'none';
     savePageBtn.disabled = true;
     // Reset Links and Annotations sections
-    linksList.innerHTML = '<p class="empty">No links yet. Save this page and then click a link from this page to create a link.</p>';
-    annotationsList.innerHTML = '<p class="empty">No annotations yet. Highlight text on the page to create one.</p>';
+    setEmptyMessage(linksList, 'No links yet. Save this page and then click a link from this page to create a link.');
+    setEmptyMessage(annotationsList, 'No annotations yet. Highlight text on the page to create one.');
     showAllAnnotationsBtn.style.display = 'none';
     return;
   }
@@ -199,12 +207,30 @@ async function loadPageData() {
       // Enable focus tracking and link indicators for saved pages
       checkAndEnableTracking();
     } else {
-      pageStatus.innerHTML = `<p class="error">${response.error}</p>`;
+      setPageStatusError(response.error || 'Unknown error');
     }
   } catch (error) {
     console.error('Failed to load page data:', error);
-    pageStatus.innerHTML = '<p class="error">Failed to load page data</p>';
+    setPageStatusError('Failed to load page data');
   }
+}
+
+// Helper to set page status error message safely
+function setPageStatusError(message: string) {
+  pageStatus.textContent = '';
+  const p = document.createElement('p');
+  p.className = 'error';
+  p.textContent = message;
+  pageStatus.appendChild(p);
+}
+
+// Helper to set an empty message on an element safely
+function setEmptyMessage(element: HTMLElement, message: string) {
+  element.textContent = '';
+  const p = document.createElement('p');
+  p.className = 'empty';
+  p.textContent = message;
+  element.appendChild(p);
 }
 
 // Display page status
@@ -323,19 +349,40 @@ function displayVersionsList() {
   if (currentSnapshots.length > 0) {
     versionsSection.style.display = 'block';
 
-    const html = currentSnapshots
-      .map(
-        (snapshot) => `
-        <div class="version snapshot" data-key="${snapshot.key}" data-item-key="${currentPage?.zoteroItemKey}">
-          <span class="version-icon">&#128247;</span>
-          <span class="version-label">${escapeHtml(snapshot.title)}</span>
-          <span class="version-date">${formatDate(snapshot.dateAdded)}</span>
-        </div>
-      `
-      )
-      .join('');
+    // Clear and rebuild versions list using DOM manipulation
+    versionsList.textContent = '';
 
-    versionsList.innerHTML = html;
+    for (const snapshot of currentSnapshots) {
+      const versionDiv = document.createElement('div');
+      versionDiv.className = 'version snapshot';
+      versionDiv.dataset.key = snapshot.key;
+      versionDiv.dataset.itemKey = currentPage?.zoteroItemKey || '';
+
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'version-icon';
+      iconSpan.textContent = '\u{1F4F7}'; // camera emoji
+
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'version-label';
+      labelSpan.textContent = snapshot.title;
+
+      const dateSpan = document.createElement('span');
+      dateSpan.className = 'version-date';
+      dateSpan.textContent = formatDate(snapshot.dateAdded);
+
+      versionDiv.appendChild(iconSpan);
+      versionDiv.appendChild(labelSpan);
+      versionDiv.appendChild(dateSpan);
+
+      // Add click handler
+      versionDiv.addEventListener('click', () => {
+        if (snapshot.key && currentPage?.zoteroItemKey) {
+          openSnapshotInReader(currentPage.zoteroItemKey, snapshot.key);
+        }
+      });
+
+      versionsList.appendChild(versionDiv);
+    }
 
     // Show "All" toggle button in Annotations header if there are snapshots
     showAllAnnotationsBtn.style.display = 'inline-block';
@@ -343,17 +390,6 @@ function displayVersionsList() {
     showAllAnnotationsBtn.title = showingAllAnnotations
       ? 'Show current annotations only'
       : 'Show all annotations from snapshots';
-
-    // Add click handlers for snapshots
-    versionsList.querySelectorAll('.snapshot').forEach((el) => {
-      el.addEventListener('click', () => {
-        const snapshotKey = (el as HTMLElement).dataset.key;
-        const itemKey = (el as HTMLElement).dataset.itemKey;
-        if (snapshotKey && itemKey) {
-          openSnapshotInReader(itemKey, snapshotKey);
-        }
-      });
-    });
   } else {
     versionsSection.style.display = 'none';
     showAllAnnotationsBtn.style.display = 'none';
@@ -432,22 +468,33 @@ async function loadProjectsForDropdown() {
   const projects = await storage.getAllProjects();
   const projectsArray = Object.values(projects);
 
+  // Clear and rebuild dropdown using DOM manipulation
+  projectDropdown.textContent = '';
+
   if (projectsArray.length === 0) {
-    projectDropdown.innerHTML = '<option value="">No projects (click sync)</option>';
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No projects (click sync)';
+    projectDropdown.appendChild(option);
     return;
   }
 
   // Build hierarchical sorted list
   const sortedProjects = buildHierarchicalProjectList(projectsArray);
 
-  projectDropdown.innerHTML =
-    '<option value="">My Library (no project)</option>' +
-    sortedProjects
-      .map(
-        (p) =>
-          `<option value="${p.id}">${p.parentId ? '\u00A0\u00A0' : ''}${escapeHtml(p.name)}</option>`
-      )
-      .join('');
+  // Add default "My Library" option
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = 'My Library (no project)';
+  projectDropdown.appendChild(defaultOption);
+
+  // Add project options
+  for (const p of sortedProjects) {
+    const option = document.createElement('option');
+    option.value = p.id;
+    option.textContent = (p.parentId ? '\u00A0\u00A0' : '') + p.name;
+    projectDropdown.appendChild(option);
+  }
 
   // Restore previous selection if it still exists
   if (previousValue && projectDropdown.querySelector(`option[value="${previousValue}"]`)) {
@@ -540,25 +587,32 @@ savePageBtn.addEventListener('click', async () => {
 
 // Display annotations (zotero-reader style)
 function displayAnnotations(annotations: Annotation[], outboxAnnotations: OutboxAnnotation[] = []) {
+  // Clear existing content
+  annotationsList.textContent = '';
+
   if (annotations.length === 0 && outboxAnnotations.length === 0) {
-    annotationsList.innerHTML =
-      '<p class="empty">No annotations yet. Highlight text on the page to create one.</p>';
+    const emptyMsg = document.createElement('p');
+    emptyMsg.className = 'empty';
+    emptyMsg.textContent = 'No annotations yet. Highlight text on the page to create one.';
+    annotationsList.appendChild(emptyMsg);
     return;
   }
 
   // Render outbox annotations first (they're pending)
-  const outboxHtml = outboxAnnotations
-    .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
-    .map((ann) => renderOutboxAnnotation(ann))
-    .join('');
+  const sortedOutbox = outboxAnnotations
+    .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
+
+  for (const ann of sortedOutbox) {
+    annotationsList.appendChild(renderOutboxAnnotationElement(ann));
+  }
 
   // Then render saved annotations
-  const savedHtml = annotations
-    .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
-    .map((ann) => renderAnnotation(ann))
-    .join('');
+  const sortedAnnotations = annotations
+    .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
 
-  annotationsList.innerHTML = outboxHtml + savedHtml;
+  for (const ann of sortedAnnotations) {
+    annotationsList.appendChild(renderAnnotationElement(ann));
+  }
 
   // Add delete handlers
   document.querySelectorAll('.delete-annotation').forEach((btn) => {
@@ -613,71 +667,170 @@ function displayAnnotations(annotations: Annotation[], outboxAnnotations: Outbox
   });
 }
 
-// Render a single annotation in zotero-reader style
-function renderAnnotation(ann: Annotation): string {
+// Render a single annotation as DOM element (zotero-reader style)
+function renderAnnotationElement(ann: Annotation): HTMLElement {
   const color = ann.color || 'yellow';
-  const notFoundClass = ann.notFound ? 'not-found' : '';
-  const historicalClass = ann.snapshotKey ? 'historical' : '';
-  const notFoundWarning = ann.notFound
-    ? `<div class="annotation-warning">&#9888; Could not find this highlight on the current page</div>`
-    : '';
 
-  return `
-    <div class="annotation ${notFoundClass} ${historicalClass}" data-id="${ann.id}" data-color="${color}">
-      <div class="annotation-header">
-        <div class="start">
-          <span class="annotation-icon">${HIGHLIGHT_ICON}</span>
-        </div>
-        <div class="end">
-          <button class="annotation-options" title="More options">&#8230;</button>
-        </div>
-      </div>
-      ${notFoundWarning}
-      <div class="annotation-text">
-        <div class="blockquote-border"></div>
-        <div class="content">${escapeHtml(ann.text)}</div>
-      </div>
-      ${ann.comment ? `<div class="annotation-comment">${escapeHtml(ann.comment)}</div>` : ''}
-      <div class="annotation-meta">
-        <span>${formatDate(ann.created)}</span>
-        ${!ann.snapshotKey ? `<button class="delete-annotation" data-id="${ann.id}" title="Delete">&#215;</button>` : ''}
-      </div>
-    </div>
-  `;
+  const container = document.createElement('div');
+  container.className = `annotation${ann.notFound ? ' not-found' : ''}${ann.snapshotKey ? ' historical' : ''}`;
+  container.dataset.id = ann.id;
+  container.dataset.color = color;
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'annotation-header';
+
+  const startDiv = document.createElement('div');
+  startDiv.className = 'start';
+  const iconSpan = document.createElement('span');
+  iconSpan.className = 'annotation-icon';
+  iconSpan.appendChild(createHighlightIcon());
+  startDiv.appendChild(iconSpan);
+
+  const endDiv = document.createElement('div');
+  endDiv.className = 'end';
+  const optionsBtn = document.createElement('button');
+  optionsBtn.className = 'annotation-options';
+  optionsBtn.title = 'More options';
+  optionsBtn.textContent = '\u2026'; // ellipsis
+  endDiv.appendChild(optionsBtn);
+
+  header.appendChild(startDiv);
+  header.appendChild(endDiv);
+  container.appendChild(header);
+
+  // Not found warning
+  if (ann.notFound) {
+    const warning = document.createElement('div');
+    warning.className = 'annotation-warning';
+    warning.textContent = '\u26A0 Could not find this highlight on the current page';
+    container.appendChild(warning);
+  }
+
+  // Annotation text
+  const textDiv = document.createElement('div');
+  textDiv.className = 'annotation-text';
+  const border = document.createElement('div');
+  border.className = 'blockquote-border';
+  const content = document.createElement('div');
+  content.className = 'content';
+  content.textContent = ann.text;
+  textDiv.appendChild(border);
+  textDiv.appendChild(content);
+  container.appendChild(textDiv);
+
+  // Comment
+  if (ann.comment) {
+    const commentDiv = document.createElement('div');
+    commentDiv.className = 'annotation-comment';
+    commentDiv.textContent = ann.comment;
+    container.appendChild(commentDiv);
+  }
+
+  // Meta
+  const metaDiv = document.createElement('div');
+  metaDiv.className = 'annotation-meta';
+  const dateSpan = document.createElement('span');
+  dateSpan.textContent = formatDate(ann.created);
+  metaDiv.appendChild(dateSpan);
+
+  if (!ann.snapshotKey) {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-annotation';
+    deleteBtn.dataset.id = ann.id;
+    deleteBtn.title = 'Delete';
+    deleteBtn.textContent = '\u00D7'; // multiplication sign (×)
+    metaDiv.appendChild(deleteBtn);
+  }
+
+  container.appendChild(metaDiv);
+  return container;
 }
 
-// Render an outbox annotation (pending upload)
-function renderOutboxAnnotation(ann: OutboxAnnotation): string {
+// Render an outbox annotation as DOM element (pending upload)
+function renderOutboxAnnotationElement(ann: OutboxAnnotation): HTMLElement {
   const color = ann.color || 'yellow';
   const statusText = getOutboxStatusText(ann.status);
   const statusClass = ann.status === 'failed' ? 'outbox-failed' : 'outbox-pending';
-  const errorHtml = ann.error
-    ? `<div class="annotation-warning">&#9888; ${escapeHtml(ann.error)}</div>`
-    : '';
 
-  return `
-    <div class="annotation outbox-annotation ${statusClass}" data-outbox-id="${ann.id}" data-color="${color}">
-      <div class="annotation-header">
-        <div class="start">
-          <span class="annotation-icon">${HIGHLIGHT_ICON}</span>
-          <span class="outbox-status">${statusText}</span>
-        </div>
-        <div class="end">
-          ${ann.status === 'failed' ? `<button class="retry-outbox" data-id="${ann.id}" title="Retry">&#8635;</button>` : ''}
-          <button class="delete-outbox" data-id="${ann.id}" title="Cancel">&#215;</button>
-        </div>
-      </div>
-      ${errorHtml}
-      <div class="annotation-text">
-        <div class="blockquote-border"></div>
-        <div class="content">${escapeHtml(ann.text)}</div>
-      </div>
-      ${ann.comment ? `<div class="annotation-comment">${escapeHtml(ann.comment)}</div>` : ''}
-      <div class="annotation-meta">
-        <span>${formatDate(ann.created)}</span>
-      </div>
-    </div>
-  `;
+  const container = document.createElement('div');
+  container.className = `annotation outbox-annotation ${statusClass}`;
+  container.dataset.outboxId = ann.id;
+  container.dataset.color = color;
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'annotation-header';
+
+  const startDiv = document.createElement('div');
+  startDiv.className = 'start';
+  const iconSpan = document.createElement('span');
+  iconSpan.className = 'annotation-icon';
+  iconSpan.appendChild(createHighlightIcon());
+  const statusSpan = document.createElement('span');
+  statusSpan.className = 'outbox-status';
+  statusSpan.textContent = statusText;
+  startDiv.appendChild(iconSpan);
+  startDiv.appendChild(statusSpan);
+
+  const endDiv = document.createElement('div');
+  endDiv.className = 'end';
+  if (ann.status === 'failed') {
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'retry-outbox';
+    retryBtn.dataset.id = ann.id;
+    retryBtn.title = 'Retry';
+    retryBtn.textContent = '\u21BB'; // refresh symbol
+    endDiv.appendChild(retryBtn);
+  }
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'delete-outbox';
+  deleteBtn.dataset.id = ann.id;
+  deleteBtn.title = 'Cancel';
+  deleteBtn.textContent = '\u00D7'; // multiplication sign (×)
+  endDiv.appendChild(deleteBtn);
+
+  header.appendChild(startDiv);
+  header.appendChild(endDiv);
+  container.appendChild(header);
+
+  // Error warning
+  if (ann.error) {
+    const warning = document.createElement('div');
+    warning.className = 'annotation-warning';
+    warning.textContent = '\u26A0 ' + ann.error;
+    container.appendChild(warning);
+  }
+
+  // Annotation text
+  const textDiv = document.createElement('div');
+  textDiv.className = 'annotation-text';
+  const border = document.createElement('div');
+  border.className = 'blockquote-border';
+  const content = document.createElement('div');
+  content.className = 'content';
+  content.textContent = ann.text;
+  textDiv.appendChild(border);
+  textDiv.appendChild(content);
+  container.appendChild(textDiv);
+
+  // Comment
+  if (ann.comment) {
+    const commentDiv = document.createElement('div');
+    commentDiv.className = 'annotation-comment';
+    commentDiv.textContent = ann.comment;
+    container.appendChild(commentDiv);
+  }
+
+  // Meta
+  const metaDiv = document.createElement('div');
+  metaDiv.className = 'annotation-meta';
+  const dateSpan = document.createElement('span');
+  dateSpan.textContent = formatDate(ann.created);
+  metaDiv.appendChild(dateSpan);
+  container.appendChild(metaDiv);
+
+  return container;
 }
 
 // Get human-readable status text for outbox annotation
@@ -785,35 +938,43 @@ async function loadProjects() {
   const projects = await storage.getAllProjects();
   const projectsArray = Object.values(projects);
 
+  // Clear existing content
+  projectsList.textContent = '';
+
   if (projectsArray.length === 0) {
-    projectsList.innerHTML =
-      '<p class="empty">No projects. Click sync to load from Zotero.</p>';
+    const emptyMsg = document.createElement('p');
+    emptyMsg.className = 'empty';
+    emptyMsg.textContent = 'No projects. Click sync to load from Zotero.';
+    projectsList.appendChild(emptyMsg);
     return;
   }
 
   // Build hierarchical sorted list
   const sortedProjects = buildHierarchicalProjectList(projectsArray);
 
-  projectsList.innerHTML = sortedProjects
-    .map(
-      (p) => `
-      <div class="project" data-id="${p.id}">
-        <div class="project-name">${p.parentId ? '\u00A0\u00A0' : ''}${escapeHtml(p.name)}</div>
-        <div class="project-count">${p.itemCount}</div>
-      </div>
-    `
-    )
-    .join('');
+  for (const p of sortedProjects) {
+    const projectDiv = document.createElement('div');
+    projectDiv.className = 'project';
+    projectDiv.dataset.id = p.id;
 
-  // Add click handlers to select project in dropdown
-  projectsList.querySelectorAll('.project').forEach((el) => {
-    el.addEventListener('click', () => {
-      const projectId = (el as HTMLElement).dataset.id;
-      if (projectId) {
-        projectDropdown.value = projectId;
-      }
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'project-name';
+    nameDiv.textContent = (p.parentId ? '\u00A0\u00A0' : '') + p.name;
+
+    const countDiv = document.createElement('div');
+    countDiv.className = 'project-count';
+    countDiv.textContent = String(p.itemCount);
+
+    projectDiv.appendChild(nameDiv);
+    projectDiv.appendChild(countDiv);
+
+    // Add click handler to select project in dropdown
+    projectDiv.addEventListener('click', () => {
+      projectDropdown.value = p.id;
     });
-  });
+
+    projectsList.appendChild(projectDiv);
+  }
 }
 
 // Sync projects
@@ -847,12 +1008,20 @@ newProject.addEventListener('click', async () => {
   const projects = await storage.getAllProjects();
   const projectsArray = Object.values(projects);
 
-  parentProject.innerHTML =
-    '<option value="">No parent (top-level)</option>' +
-    projectsArray
-      .filter((p) => !p.parentId)
-      .map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)
-      .join('');
+  // Clear and rebuild parent project dropdown using DOM manipulation
+  parentProject.textContent = '';
+
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = 'No parent (top-level)';
+  parentProject.appendChild(defaultOption);
+
+  for (const p of projectsArray.filter((p) => !p.parentId)) {
+    const option = document.createElement('option');
+    option.value = p.id;
+    option.textContent = p.name;
+    parentProject.appendChild(option);
+  }
 
   newProjectModal.style.display = 'flex';
   projectName.focus();
@@ -1033,7 +1202,7 @@ interface LinkedPage {
  */
 async function loadLinks() {
   if (!currentTab?.id) {
-    linksList.innerHTML = '<p class="empty">No active tab.</p>';
+    setEmptyMessage(linksList, 'No active tab.');
     return;
   }
 
@@ -1058,7 +1227,7 @@ async function loadLinks() {
     });
 
     if (!savedUrlsResponse.success) {
-      linksList.innerHTML = '<p class="empty">Failed to load saved pages.</p>';
+      setEmptyMessage(linksList, 'Failed to load saved pages.');
       return;
     }
 
@@ -1107,7 +1276,7 @@ async function loadLinks() {
     displayLinks(outboundLinks);
   } catch (error) {
     console.error('Failed to load links:', error);
-    linksList.innerHTML = '<p class="empty">Failed to load links.</p>';
+    setEmptyMessage(linksList, 'Failed to load links.');
   }
 }
 
@@ -1158,42 +1327,79 @@ function buildColorBlocksHtml(colors: string[]): string {
  * Display linked pages
  */
 function displayLinks(links: LinkedPage[]) {
+  // Clear existing content
+  linksList.textContent = '';
+
   if (links.length === 0) {
-    linksList.innerHTML =
-      '<p class="empty">No outbound links to saved pages found.</p>';
+    const emptyMsg = document.createElement('p');
+    emptyMsg.className = 'empty';
+    emptyMsg.textContent = 'No outbound links to saved pages found.';
+    linksList.appendChild(emptyMsg);
     return;
   }
 
-  let html = '<div class="link-group"><h4>Links to saved pages</h4>';
-  html += links
-    .map((link) => {
-      const colorBlocks = buildColorBlocksHtml(link.annotationColors);
-      // Use title only if it's meaningful (more than 5 chars and less than 60)
-      const displayText = link.title && link.title.length > 5 && link.title.length < 60
-        ? link.title
-        : truncateUrl(link.url);
+  const linkGroup = document.createElement('div');
+  linkGroup.className = 'link-group';
 
-      return `
-        <div class="link-item" data-url="${escapeHtml(link.url)}">
-          <span class="link-indicator">[wt ${link.readPercentage}%${colorBlocks}]</span>
-          <span class="link-url" title="${escapeHtml(link.url)}">${escapeHtml(displayText)}</span>
-        </div>
-      `;
-    })
-    .join('');
-  html += '</div>';
+  const header = document.createElement('h4');
+  header.textContent = 'Links to saved pages';
+  linkGroup.appendChild(header);
 
-  linksList.innerHTML = html;
+  const colorMap: Record<string, string> = {
+    yellow: '#ffd400',
+    red: '#ff6666',
+    green: '#5fb236',
+    blue: '#2ea8e5',
+    purple: '#a28ae5',
+    magenta: '#e56eee',
+    orange: '#f19837',
+    gray: '#aaaaaa',
+  };
 
-  // Add click handlers to navigate to linked pages
-  linksList.querySelectorAll('.link-item').forEach((el) => {
-    el.addEventListener('click', () => {
-      const url = (el as HTMLElement).dataset.url;
-      if (url) {
-        browser.tabs.create({ url });
+  for (const link of links) {
+    const linkItem = document.createElement('div');
+    linkItem.className = 'link-item';
+    linkItem.dataset.url = link.url;
+
+    // Create indicator span
+    const indicator = document.createElement('span');
+    indicator.className = 'link-indicator';
+    indicator.appendChild(document.createTextNode(`[wt ${link.readPercentage}%`));
+
+    // Add color blocks
+    if (link.annotationColors.length > 0) {
+      for (const color of link.annotationColors) {
+        const block = document.createElement('span');
+        block.className = 'color-block';
+        block.style.background = colorMap[color] || '#999';
+        indicator.appendChild(block);
       }
+    }
+
+    indicator.appendChild(document.createTextNode(']'));
+
+    // Create URL span
+    const urlSpan = document.createElement('span');
+    urlSpan.className = 'link-url';
+    urlSpan.title = link.url;
+    // Use title only if it's meaningful (more than 5 chars and less than 60)
+    const displayText = link.title && link.title.length > 5 && link.title.length < 60
+      ? link.title
+      : truncateUrl(link.url);
+    urlSpan.textContent = displayText;
+
+    linkItem.appendChild(indicator);
+    linkItem.appendChild(urlSpan);
+
+    // Add click handler
+    linkItem.addEventListener('click', () => {
+      browser.tabs.create({ url: link.url });
     });
-  });
+
+    linkGroup.appendChild(linkItem);
+  }
+
+  linksList.appendChild(linkGroup);
 }
 
 /**

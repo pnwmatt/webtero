@@ -296,36 +296,38 @@ function addLinkIndicators() {
         indicator.style.cssText =
           'font-size: 0.7em; color: #666; margin-left: 2px; font-weight: normal; text-decoration: none; display: inline-flex; align-items: center; vertical-align: super;';
 
-        // Build indicator content with colored blocks
-        const colorBlocks = buildAnnotationColorBlocks(savedInfo.annotationColors);
-        indicator.innerHTML = `[wt ${savedInfo.readPercentage}% ${colorBlocks}]`;
-        indicator.title = buildIndicatorTooltip(savedInfo);
+        // Build indicator content with colored blocks using DOM manipulation
+        populateLinkIndicator(indicator, savedInfo);
 
         link.appendChild(indicator);
       } else {
         // Update existing indicator
         const indicator = link.querySelector('.webtero-link-indicator') as HTMLElement;
-        const colorBlocks = buildAnnotationColorBlocks(savedInfo.annotationColors);
-        indicator.innerHTML = `[wt ${savedInfo.readPercentage}% ${colorBlocks}]`;
-        indicator.title = buildIndicatorTooltip(savedInfo);
+        indicator.textContent = ''; // Clear existing content
+        populateLinkIndicator(indicator, savedInfo);
       }
     }
   });
 }
 
 /**
- * Build HTML for annotation color blocks
+ * Populate a link indicator element with text and color blocks using DOM manipulation
  */
-function buildAnnotationColorBlocks(colors: string[]): string {
-  if (colors.length === 0) return ' ';
+function populateLinkIndicator(indicator: HTMLElement, savedInfo: SavedUrlInfo): void {
+  indicator.appendChild(document.createTextNode(`[wt ${savedInfo.readPercentage}%`));
 
-  // Create small colored blocks for each annotation
-  const blocks = colors.map((color) => {
-    const bgColor = getColorValue(color as HighlightColor);
-    return `<span style="display:inline-block;width:3px;height:0.9em;background:${bgColor};margin:0 0.5px;border-radius:1px;"></span>`;
-  }).join('');
+  // Add color blocks
+  if (savedInfo.annotationColors.length > 0) {
+    indicator.appendChild(document.createTextNode(' '));
+    for (const color of savedInfo.annotationColors) {
+      const span = document.createElement('span');
+      span.style.cssText = `display:inline-block;width:3px;height:0.9em;background:${getColorValue(color as HighlightColor)};margin:0 0.5px;border-radius:1px;`;
+      indicator.appendChild(span);
+    }
+  }
 
-  return ` ${blocks} `;
+  indicator.appendChild(document.createTextNode(']'));
+  indicator.title = buildIndicatorTooltip(savedInfo);
 }
 
 /**
@@ -559,32 +561,38 @@ function createHighlightToolbar(): { host: HTMLElement; inner: HTMLElement } {
 
   const toolbar = document.createElement('div');
   toolbar.className = 'webtero-toolbar';
-  toolbar.innerHTML = `
-    <div class="webtero-toolbar-content">
-      <div class="webtero-colors">
-        ${colors
-      .map(
-        (color) =>
-          `<button class="webtero-color-btn" data-color="${color}" style="background: ${getColorValue(color)}" title="${color}"></button>`
-      )
-      .join('')}
-      </div>
-      <button class="webtero-comment-btn" title="Add comment">💬</button>
-    </div>
-  `;
 
-  // Add event listeners
-  toolbar.querySelectorAll('.webtero-color-btn').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      const color = (e.target as HTMLElement).dataset.color as HighlightColor;
+  // Build toolbar using DOM manipulation instead of innerHTML
+  const toolbarContent = document.createElement('div');
+  toolbarContent.className = 'webtero-toolbar-content';
+
+  const colorsDiv = document.createElement('div');
+  colorsDiv.className = 'webtero-colors';
+
+  for (const color of colors) {
+    const btn = document.createElement('button');
+    btn.className = 'webtero-color-btn';
+    btn.dataset.color = color;
+    btn.style.background = getColorValue(color);
+    btn.title = color;
+    btn.addEventListener('click', () => {
       createHighlight(color);
     });
-  });
+    colorsDiv.appendChild(btn);
+  }
 
-  toolbar.querySelector('.webtero-comment-btn')?.addEventListener('click', () => {
+  const commentBtn = document.createElement('button');
+  commentBtn.className = 'webtero-comment-btn';
+  commentBtn.title = 'Add comment';
+  commentBtn.textContent = '💬';
+  commentBtn.addEventListener('click', () => {
     const comment = prompt('Add a comment (optional):');
     createHighlight('yellow', comment ?? undefined);
   });
+
+  toolbarContent.appendChild(colorsDiv);
+  toolbarContent.appendChild(commentBtn);
+  toolbar.appendChild(toolbarContent);
 
   shadow.appendChild(toolbar);
   document.body.appendChild(host);
@@ -610,41 +618,49 @@ function createEditToolbar(): { host: HTMLElement; inner: HTMLElement } {
 
   const toolbar = document.createElement('div');
   toolbar.className = 'webtero-toolbar';
-  toolbar.innerHTML = `
-    <div class="webtero-toolbar-content">
-      <div class="webtero-colors">
-        ${colors
-      .map(
-        (color) =>
-          `<button class="webtero-color-btn" data-color="${color}" style="background: ${getColorValue(color)}" title="Change to ${color}"></button>`
-      )
-      .join('')}
-      </div>
-      <button class="webtero-comment-btn" title="Edit comment">💬</button>
-      <button class="webtero-delete-btn" title="Delete highlight">🗑️</button>
-    </div>
-  `;
 
-  // Add event listeners for color change
-  toolbar.querySelectorAll('.webtero-color-btn').forEach((btn) => {
+  // Build toolbar using DOM manipulation instead of innerHTML
+  const toolbarContent = document.createElement('div');
+  toolbarContent.className = 'webtero-toolbar-content';
+
+  const colorsDiv = document.createElement('div');
+  colorsDiv.className = 'webtero-colors';
+
+  for (const color of colors) {
+    const btn = document.createElement('button');
+    btn.className = 'webtero-color-btn';
+    btn.dataset.color = color;
+    btn.style.background = getColorValue(color);
+    btn.title = `Change to ${color}`;
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const color = (e.target as HTMLElement).dataset.color as HighlightColor;
       updateHighlightColor(color);
     });
-  });
+    colorsDiv.appendChild(btn);
+  }
 
-  // Edit comment
-  toolbar.querySelector('.webtero-comment-btn')?.addEventListener('click', (e) => {
+  const commentBtn = document.createElement('button');
+  commentBtn.className = 'webtero-comment-btn';
+  commentBtn.title = 'Edit comment';
+  commentBtn.textContent = '💬';
+  commentBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     editHighlightComment();
   });
 
-  // Delete highlight
-  toolbar.querySelector('.webtero-delete-btn')?.addEventListener('click', (e) => {
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'webtero-delete-btn';
+  deleteBtn.title = 'Delete highlight';
+  deleteBtn.textContent = '🗑️';
+  deleteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     deleteHighlight();
   });
+
+  toolbarContent.appendChild(colorsDiv);
+  toolbarContent.appendChild(commentBtn);
+  toolbarContent.appendChild(deleteBtn);
+  toolbar.appendChild(toolbarContent);
 
   shadow.appendChild(toolbar);
   document.body.appendChild(host);
@@ -2012,6 +2028,34 @@ function scrollToAndFlashCSSHighlight(range: Range, color: HighlightColor) {
 }
 
 /**
+ * Show OAuth result page using DOM manipulation (avoids innerHTML for security)
+ */
+function showOAuthResultPage(success: boolean, title: string, message: string): void {
+  // Clear the body
+  document.body.textContent = '';
+
+  const container = document.createElement('div');
+  container.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: system-ui, sans-serif;';
+
+  const h1 = document.createElement('h1');
+  h1.style.cssText = `color: ${success ? '#4caf50' : '#c62828'}; margin-bottom: 1rem;`;
+  h1.textContent = title;
+
+  const p1 = document.createElement('p');
+  p1.style.cssText = 'color: #666;';
+  p1.textContent = message;
+
+  const p2 = document.createElement('p');
+  p2.style.cssText = 'color: #999; font-size: 0.875rem; margin-top: 2rem;';
+  p2.textContent = success ? 'This window will close automatically...' : 'Please close this window and try again.';
+
+  container.appendChild(h1);
+  container.appendChild(p1);
+  container.appendChild(p2);
+  document.body.appendChild(container);
+}
+
+/**
  * Handle OAuth callback URL detection
  * When Zotero redirects to the callback URL after authorization,
  * this function detects it and sends the OAuth parameters to the background script
@@ -2041,27 +2085,16 @@ function handleOAuthCallback() {
       .then((response) => {
         if (response?.success) {
           if (LOG_LEVEL > 0) console.log('Webtero: OAuth callback processed successfully');
-          // Show success message on the page
-          document.body.innerHTML = `
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: system-ui, sans-serif;">
-              <h1 style="color: #4caf50; margin-bottom: 1rem;">Authorization Successful</h1>
-              <p style="color: #666;">You can close this window and return to Webtero.</p>
-              <p style="color: #999; font-size: 0.875rem; margin-top: 2rem;">This window will close automatically...</p>
-            </div>
-          `;
+          // Show success message on the page using DOM manipulation
+          showOAuthResultPage(true, 'Authorization Successful', 'You can close this window and return to Webtero.');
           // Try to close the window after a short delay
           setTimeout(() => {
             window.close();
           }, 2000);
         } else {
           console.error('Webtero: OAuth callback failed:', response?.error);
-          document.body.innerHTML = `
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: system-ui, sans-serif;">
-              <h1 style="color: #c62828; margin-bottom: 1rem;">Authorization Failed</h1>
-              <p style="color: #666;">${response?.error || 'Unknown error occurred'}</p>
-              <p style="color: #999; font-size: 0.875rem; margin-top: 2rem;">Please close this window and try again.</p>
-            </div>
-          `;
+          // Show error message on the page using DOM manipulation
+          showOAuthResultPage(false, 'Authorization Failed', response?.error || 'Unknown error occurred');
         }
       })
       .catch((error) => {
