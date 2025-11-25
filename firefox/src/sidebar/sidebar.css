@@ -874,16 +874,14 @@ body {
   gap: 0.25rem;
 }
 
-/* Historical annotation indicator */
-.annotation.historical .annotation-header::after {
-  content: "from snapshot";
+/* Snapshot badge in annotation header */
+.snapshot-badge {
   font-size: 0.625rem;
   color: var(--fill-tertiary);
   background: #f5f5f5;
   padding: 0.125rem 0.375rem;
   border-radius: 3px;
-  margin-left: auto;
-  margin-right: 0.5rem;
+  white-space: nowrap;
 }
 
 /* ============================================

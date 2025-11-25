@@ -301,12 +301,10 @@ async function handleSavePage(data: {
           .slice(0, 100); // Limit length
         const filename = `${sanitizedTitle}.html`;
 
-        // Determine attachment title
-        // If existing item has different title, use "Snapshot: <new title>"
-        let attachmentTitle = 'Snapshot';
-        if (isExistingItem && item.data.title !== data.title) {
-          attachmentTitle = `Snapshot: ${data.title}`;
-        }
+        // Get existing snapshots to determine the next snapshot number
+        const existingSnapshots = await zoteroAPI.getSnapshots(item.key);
+        const snapshotNumber = existingSnapshots.length + 1;
+        const attachmentTitle = `Snapshot ${snapshotNumber}`;
 
         // Create attachment item
         // This adds to the existing item or the newly created one
@@ -383,10 +381,9 @@ async function handleCreateAnnotation(data: {
     return { success: false, error: 'No snapshot found. Please save a snapshot first.' };
   }
 
-  // Create annotation in Zotero as a child of the parent webpage item
-  // (Zotero API doesn't allow notes as children of attachments)
+  // Create annotation in Zotero as a child of the snapshot attachment
   const note = await zoteroAPI.createAnnotation(
-    page.zoteroItemKey,
+    snapshotKey,
     data.text,
     data.comment,
     data.color
@@ -398,7 +395,7 @@ async function handleCreateAnnotation(data: {
     pageUrl: normalizedUrl,
     zoteroItemKey: page.zoteroItemKey,
     zoteroNoteKey: note.key,
-    snapshotKey, // Associate with snapshot locally
+    snapshotKey,
     text: data.text,
     comment: data.comment,
     color: data.color as any,

@@ -671,9 +671,17 @@ function displayAnnotations(annotations: Annotation[], outboxAnnotations: Outbox
   });
 }
 
+// Get snapshot title by key from currentSnapshots
+function getSnapshotTitle(snapshotKey: string | undefined): string | null {
+  if (!snapshotKey) return null;
+  const snapshot = currentSnapshots.find((s) => s.key === snapshotKey);
+  return snapshot?.title || null;
+}
+
 // Render a single annotation as DOM element (zotero-reader style)
 function renderAnnotationElement(ann: Annotation): HTMLElement {
   const color = ann.color || 'yellow';
+  const snapshotTitle = getSnapshotTitle(ann.snapshotKey);
 
   const container = document.createElement('div');
   container.className = `annotation${ann.notFound ? ' not-found' : ''}${ann.snapshotKey ? ' historical' : ''}`;
@@ -690,6 +698,15 @@ function renderAnnotationElement(ann: Annotation): HTMLElement {
   iconSpan.className = 'annotation-icon';
   iconSpan.appendChild(createHighlightIcon());
   startDiv.appendChild(iconSpan);
+
+  // Show snapshot badge if annotation is associated with a snapshot
+  if (snapshotTitle) {
+    const snapshotBadge = document.createElement('span');
+    snapshotBadge.className = 'snapshot-badge';
+    snapshotBadge.textContent = snapshotTitle;
+    snapshotBadge.title = `From ${snapshotTitle}`;
+    startDiv.appendChild(snapshotBadge);
+  }
 
   const endDiv = document.createElement('div');
   endDiv.className = 'end';
