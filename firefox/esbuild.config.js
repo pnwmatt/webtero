@@ -8,9 +8,9 @@ const isWatch = process.argv.includes('--watch');
 function loadEnv() {
   const envPath = '.env';
   const defaults = {
-    FEATURE_OAUTH_ENABLED: 'false',
-    ZOTERO_OAUTH_CLIENT_KEY: '',
-    ZOTERO_OAUTH_CLIENT_SECRET: '',
+    FEATURE_OAUTH_ENABLED: 'true',
+    ZOTERO_OAUTH_CLIENT_KEY: '65807661dc2dda6518ef',
+    ZOTERO_OAUTH_CLIENT_SECRET: 'af4703385172e63457f2',
   };
 
   if (existsSync(envPath)) {

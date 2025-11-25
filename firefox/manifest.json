@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Webtero",
-  "version": "0.0.1",
-  "description": "Transform web research from scattered bookmarks into structured knowledge projects",
+  "version": "0.0.3",
+  "description": "Transform web research from scattered bookmarks into structured knowledge projects - now in Firefox!",
   "permissions": [
     "storage",
     "activeTab",
@@ -11,7 +11,6 @@
     "identity"
   ],
   "host_permissions": [
-    "http://127.0.0.1:23119/*",
     "https://api.zotero.org/*",
     "https://www.zotero.org/*"
   ],
