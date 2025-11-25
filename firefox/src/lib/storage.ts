@@ -181,28 +181,33 @@ class Storage {
     const sessions = await this.getFocusSessionsByItem(itemKey);
     if (sessions.length === 0) return 0;
 
-    // Collect all ranges
+    // Collect all ranges from all sessions
     const allRanges: Array<{ start: number; end: number }> = [];
     for (const session of sessions) {
-      allRanges.push(...session.readRanges);
+      for (const range of session.readRanges) {
+        // Clone the range to avoid mutating the original
+        allRanges.push({ start: range.start, end: range.end });
+      }
     }
 
     if (allRanges.length === 0) return 0;
 
     // Merge overlapping ranges
     allRanges.sort((a, b) => a.start - b.start);
-    const merged: Array<{ start: number; end: number }> = [allRanges[0]];
+    const merged: Array<{ start: number; end: number }> = [];
 
-    for (let i = 1; i < allRanges.length; i++) {
-      const current = allRanges[i];
-      const last = merged[merged.length - 1];
-
-      if (current.start <= last.end) {
-        // Overlapping, extend the last range
-        last.end = Math.max(last.end, current.end);
+    for (const range of allRanges) {
+      if (merged.length === 0) {
+        merged.push({ start: range.start, end: range.end });
       } else {
-        // Non-overlapping, add new range
-        merged.push(current);
+        const last = merged[merged.length - 1];
+        if (range.start <= last.end) {
+          // Overlapping or adjacent, extend the last range
+          last.end = Math.max(last.end, range.end);
+        } else {
+          // Non-overlapping, add new range
+          merged.push({ start: range.start, end: range.end });
+        }
       }
     }
 
@@ -210,7 +215,12 @@ class Storage {
     const totalCovered = merged.reduce((sum, r) => sum + (r.end - r.start), 0);
     const percentage = Math.min(100, Math.round(totalCovered));
 
-    if (LOG_LEVEL > 0) console.log(`Webtero: Read percentage for ${itemKey}: ${percentage}% (${sessions.length} sessions, ${allRanges.length} ranges)`);
+    if (LOG_LEVEL > 0) {
+      console.log(`Webtero: Read percentage for ${itemKey}:`);
+      console.log(`  Sessions: ${sessions.length}, Raw ranges: ${allRanges.length}`);
+      console.log(`  Merged ranges: ${JSON.stringify(merged)}`);
+      console.log(`  Total covered: ${totalCovered.toFixed(1)}%, Final: ${percentage}%`);
+    }
 
     return percentage;
   }

@@ -207,6 +207,30 @@ export interface ZoteroNote {
   };
 }
 
+export interface ZoteroAnnotation {
+  key: string;
+  version: number;
+  library: {
+    type: string;
+    id: number;
+  };
+  data: {
+    key: string;
+    version: number;
+    itemType: 'annotation';
+    parentItem: string; // Attachment key (snapshot)
+    annotationType: 'highlight' | 'underline' | 'note' | 'image';
+    annotationText?: string; // The highlighted text
+    annotationComment?: string; // User comment
+    annotationColor: string; // Hex color like "#ffd400"
+    annotationPageLabel?: string;
+    annotationSortIndex: string; // Position for sorting
+    annotationPosition: string; // JSON position data
+    tags?: Array<{ tag: string }>;
+    [key: string]: unknown;
+  };
+}
+
 // Zotero Connector API types
 export interface ConnectorPingResponse {
   prefs?: {

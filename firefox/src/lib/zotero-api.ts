@@ -1,5 +1,6 @@
-import type { ZoteroCollection, ZoteroItem, ZoteroNote } from './types';
+import type { ZoteroCollection, ZoteroItem, ZoteroNote, ZoteroAnnotation } from './types';
 import { storage } from './storage';
+import { getColorHex } from './utils';
 
 const API_BASE = 'https://api.zotero.org';
 const API_VERSION = '3';
@@ -234,29 +235,49 @@ class ZoteroAPI {
   }
 
   /**
-   * Create an annotation as a child note
+   * Create an annotation as a child of an attachment (snapshot)
+   * Uses Zotero's annotation item type for proper integration with Zotero Reader
    */
   async createAnnotation(
-    parentItemKey: string,
+    attachmentKey: string,
     text: string,
     comment?: string,
-    color?: string
-  ): Promise<ZoteroNote> {
+    color?: string,
+    position?: { xpath: string; offset: number; length: number }
+  ): Promise<ZoteroAnnotation> {
     const userID = await this.getUserID();
     const headers = await this.getHeaders();
 
-    // Format note content as HTML
-    const noteContent = `
-      <p><strong>Highlight:</strong> ${this.escapeHtml(text)}</p>
-      ${comment ? `<p><strong>Comment:</strong> ${this.escapeHtml(comment)}</p>` : ''}
-      ${color ? `<p><em>Color: ${color}</em></p>` : ''}
-    `.trim();
+    // Build the annotation position for web/snapshot annotations
+    // This uses a selector-based position format similar to EPUB annotations
+    const annotationPosition = position ? JSON.stringify({
+      type: 'FragmentSelector',
+      conformsTo: 'http://www.w3.org/TR/annotation-model/',
+      value: position.xpath,
+      refinedBy: {
+        type: 'TextPositionSelector',
+        start: position.offset,
+        end: position.offset + position.length,
+      },
+    }) : '{}';
+
+    // Generate a sort index for HTML/snapshot annotations
+    // Format: 7-digit character offset from start of body (e.g., "0001234")
+    // This matches Zotero Reader's snapshot-view.ts SORT_INDEX_LENGTH = 7
+    const sortIndex = position
+      ? String(position.offset).padStart(7, '0').substring(0, 7)
+      : '0000000';
 
     const data = {
-      itemType: 'note',
-      parentItem: parentItemKey,
-      note: noteContent,
-      tags: color ? [{ tag: `highlight-${color}` }] : [],
+      itemType: 'annotation',
+      parentItem: attachmentKey,
+      annotationType: 'highlight',
+      annotationText: text,
+      annotationComment: comment || '',
+      annotationColor: getColorHex(color || 'yellow'),
+      annotationSortIndex: sortIndex,
+      annotationPosition: annotationPosition,
+      tags: [],
     };
 
     const response = await fetch(`${API_BASE}/users/${userID}/items`, {
@@ -266,6 +287,8 @@ class ZoteroAPI {
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Annotation creation failed:', response.status, errorText);
       throw new Error(`Failed to create annotation: ${response.statusText}`);
     }
 
@@ -278,12 +301,12 @@ class ZoteroAPI {
       throw new Error(`Failed to create annotation: ${failedItem?.message || 'Unknown error'}`);
     }
 
-    const note = result.successful?.['0'];
-    if (!note) {
-      throw new Error('No note returned from API');
+    const annotation = result.successful?.['0'];
+    if (!annotation) {
+      throw new Error('No annotation returned from API');
     }
 
-    return note;
+    return annotation;
   }
 
   /**
@@ -482,12 +505,6 @@ class ZoteroAPI {
     }
 
     console.log('Snapshot uploaded successfully');
-  }
-
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
   }
 }
 

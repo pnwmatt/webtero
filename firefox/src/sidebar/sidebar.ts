@@ -55,6 +55,7 @@ let currentOutboxAnnotations: OutboxAnnotation[] = [];
 let showingAllAnnotations = false;
 let pageLoadTime: Date = new Date();
 let liveVersionTimer: ReturnType<typeof setInterval> | null = null;
+let readProgressTimer: ReturnType<typeof setInterval> | null = null;
 
 // Create highlight icon SVG element (from zotero-reader)
 function createHighlightIcon(): SVGElement {
@@ -300,11 +301,13 @@ async function displayPageStatus() {
 
     // Update read progress
     await updateReadProgress();
+    startReadProgressTimer();
   } else {
     // First time saving
     savedInfo.style.display = 'none';
     savedIcon.style.display = 'none';
     stopLiveVersionTimer();
+    stopReadProgressTimer();
 
     // Hide read progress for unsaved pages
     readProgress.style.display = 'none';
@@ -342,6 +345,25 @@ function stopLiveVersionTimer() {
   if (liveVersionTimer) {
     clearInterval(liveVersionTimer);
     liveVersionTimer = null;
+  }
+}
+
+// Start timer to periodically update read progress
+function startReadProgressTimer() {
+  stopReadProgressTimer();
+  // Update every 5 seconds to catch when user returns to tab
+  readProgressTimer = setInterval(() => {
+    if (cachedSettings.readingProgressEnabled && currentPage?.zoteroItemKey) {
+      updateReadProgress();
+    }
+  }, 5000);
+}
+
+// Stop the read progress timer
+function stopReadProgressTimer() {
+  if (readProgressTimer) {
+    clearInterval(readProgressTimer);
+    readProgressTimer = null;
   }
 }
 

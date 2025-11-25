@@ -382,11 +382,12 @@ async function handleCreateAnnotation(data: {
   }
 
   // Create annotation in Zotero as a child of the snapshot attachment
-  const note = await zoteroAPI.createAnnotation(
+  const zoteroAnnotation = await zoteroAPI.createAnnotation(
     snapshotKey,
     data.text,
     data.comment,
-    data.color
+    data.color,
+    data.position
   );
 
   // Save annotation locally with snapshot association for tracking
@@ -394,7 +395,7 @@ async function handleCreateAnnotation(data: {
     id: generateId(),
     pageUrl: normalizedUrl,
     zoteroItemKey: page.zoteroItemKey,
-    zoteroNoteKey: note.key,
+    zoteroNoteKey: zoteroAnnotation.key,
     snapshotKey,
     text: data.text,
     comment: data.comment,

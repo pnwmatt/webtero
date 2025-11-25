@@ -100,6 +100,25 @@ export function normalizeUrl(url: string): string {
   }
 }
 
+// Zotero annotation hex colors from zotero-reader defines.js
+const HIGHLIGHT_HEX_COLORS: Record<string, string> = {
+  yellow: '#ffd400',
+  red: '#ff6666',
+  green: '#5fb236',
+  blue: '#2ea8e5',
+  purple: '#a28ae5',
+  magenta: '#e56eee',
+  orange: '#f19837',
+  gray: '#aaaaaa',
+};
+
+/**
+ * Get hex color value for Zotero API
+ */
+export function getColorHex(color: string): string {
+  return HIGHLIGHT_HEX_COLORS[color] ?? HIGHLIGHT_HEX_COLORS.yellow;
+}
+
 /**
  * Get color CSS value from highlight color name
  * Colors match Zotero annotation colors from zotero-reader defines.js
