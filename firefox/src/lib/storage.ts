@@ -10,6 +10,8 @@ import type {
   OutboxAnnotation,
 } from './types';
 
+const LOG_LEVEL = 0;
+
 /**
  * Storage abstraction layer using browser.storage.local
  */
@@ -206,7 +208,7 @@ class Storage {
     const totalCovered = merged.reduce((sum, r) => sum + (r.end - r.start), 0);
     const percentage = Math.min(100, Math.round(totalCovered));
 
-    console.log(`Webtero: Read percentage for ${itemKey}: ${percentage}% (${sessions.length} sessions, ${allRanges.length} ranges)`);
+    if (LOG_LEVEL > 0) console.log(`Webtero: Read percentage for ${itemKey}: ${percentage}% (${sessions.length} sessions, ${allRanges.length} ranges)`);
 
     return percentage;
   }

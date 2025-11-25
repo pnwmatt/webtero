@@ -4,7 +4,7 @@ import { config } from '../lib/config';
 
 const LOG_LEVEL = 0;
 
-console.log('Webtero content script loaded');
+if (LOG_LEVEL > 0) console.log('Webtero content script loaded');
 
 // Check for OAuth callback immediately on load
 handleOAuthCallback();
@@ -49,10 +49,10 @@ function getViewportPercentage(): { start: number; end: number } {
  * Start tracking focus/scroll for a saved page
  */
 async function startFocusTracking(itemKey: string) {
-  console.log('Webtero: startFocusTracking called for itemKey:', itemKey);
+  if (LOG_LEVEL > 0) console.log('Webtero: startFocusTracking called for itemKey:', itemKey);
 
   if (currentFocusSessionId) {
-    console.log('Webtero: Already tracking, skipping');
+    if (LOG_LEVEL > 0) console.log('Webtero: Already tracking, skipping');
     return;
   }
 
@@ -101,7 +101,7 @@ async function startFocusTracking(itemKey: string) {
 async function updateFocusSession(readRange: { start: number; end: number }) {
   if (!currentFocusSessionId) return;
 
-  console.log(`Webtero: Recording scroll position ${readRange.start.toFixed(1)}%-${readRange.end.toFixed(1)}%`);
+  if (LOG_LEVEL > 0) console.log(`Webtero: Recording scroll position ${readRange.start.toFixed(1)}%-${readRange.end.toFixed(1)}%`);
 
   try {
     await browser.runtime.sendMessage({
@@ -828,7 +828,7 @@ async function loadExistingHighlights() {
   notFoundAnnotationIds.clear();
   highlightsLoaded = false;
 
-  console.log('Webtero: loadExistingHighlights called for URL:', window.location.href);
+  if (LOG_LEVEL > 0) console.log('Webtero: loadExistingHighlights called for URL:', window.location.href);
 
   try {
     const response = await browser.runtime.sendMessage({
@@ -836,13 +836,13 @@ async function loadExistingHighlights() {
       data: { url: window.location.href },
     });
 
-    console.log('Webtero: GET_ANNOTATIONS response:', response);
+    if (LOG_LEVEL > 0) console.log('Webtero: GET_ANNOTATIONS response:', response);
 
     if (response.success && Array.isArray(response.data)) {
       const annotations = response.data as Annotation[];
-      console.log(`Webtero: Found ${annotations.length} annotations to apply`);
+      if (LOG_LEVEL > 0) console.log(`Webtero: Found ${annotations.length} annotations to apply`);
       annotations.forEach((ann, index) => {
-        console.log(`Webtero: [${index + 1}/${annotations.length}] Applying annotation:`, {
+        if (LOG_LEVEL > 0) console.log(`Webtero: [${index + 1}/${annotations.length}] Applying annotation:`, {
           id: ann.id,
           text: ann.text,
           xpath: ann.position?.xpath,
@@ -852,9 +852,9 @@ async function loadExistingHighlights() {
         const success = applyStoredHighlight(ann);
         if (!success) {
           notFoundAnnotationIds.add(ann.id);
-          console.log(`Webtero: [${index + 1}/${annotations.length}] FAILED to apply annotation:`, ann.id);
+          if (LOG_LEVEL > 0) console.log(`Webtero: [${index + 1}/${annotations.length}] FAILED to apply annotation:`, ann.id);
         } else {
-          console.log(`Webtero: [${index + 1}/${annotations.length}] SUCCESS applied annotation:`, ann.id);
+          if (LOG_LEVEL > 0) console.log(`Webtero: [${index + 1}/${annotations.length}] SUCCESS applied annotation:`, ann.id);
         }
       });
     }
@@ -862,7 +862,7 @@ async function loadExistingHighlights() {
     console.error('Webtero: Failed to load highlights:', error);
   } finally {
     highlightsLoaded = true;
-    console.log('Webtero: loadExistingHighlights complete. Not found:', Array.from(notFoundAnnotationIds));
+    if (LOG_LEVEL > 0) console.log('Webtero: loadExistingHighlights complete. Not found:', Array.from(notFoundAnnotationIds));
   }
 }
 
@@ -871,14 +871,14 @@ async function loadExistingHighlights() {
  * This is useful when the DOM changes or loads dynamically
  */
 async function retryNotFoundHighlights(): Promise<{ retriedCount: number; stillNotFound: number }> {
-  console.log('Webtero: retryNotFoundHighlights called, notFoundAnnotationIds:', Array.from(notFoundAnnotationIds));
+  if (LOG_LEVEL > 0) console.log('Webtero: retryNotFoundHighlights called, notFoundAnnotationIds:', Array.from(notFoundAnnotationIds));
 
   if (notFoundAnnotationIds.size === 0) {
-    console.log('Webtero: No not-found annotations to retry');
+    if (LOG_LEVEL > 0) console.log('Webtero: No not-found annotations to retry');
     return { retriedCount: 0, stillNotFound: 0 };
   }
 
-  console.log(`Webtero: Retrying ${notFoundAnnotationIds.size} not-found highlights...`);
+  if (LOG_LEVEL > 0) console.log(`Webtero: Retrying ${notFoundAnnotationIds.size} not-found highlights...`);
 
   try {
     const response = await browser.runtime.sendMessage({
@@ -886,24 +886,24 @@ async function retryNotFoundHighlights(): Promise<{ retriedCount: number; stillN
       data: { url: window.location.href },
     });
 
-    console.log('Webtero: retryNotFoundHighlights GET_ANNOTATIONS response:', response);
+    if (LOG_LEVEL > 0) console.log('Webtero: retryNotFoundHighlights GET_ANNOTATIONS response:', response);
 
     if (response.success && Array.isArray(response.data)) {
       const annotations = response.data as Annotation[];
       const previouslyNotFoundIds = Array.from(notFoundAnnotationIds);
       const retriedCount = previouslyNotFoundIds.length;
 
-      console.log(`Webtero: retryNotFoundHighlights - ${annotations.length} annotations from server, ${retriedCount} to retry`);
+      if (LOG_LEVEL > 0) console.log(`Webtero: retryNotFoundHighlights - ${annotations.length} annotations from server, ${retriedCount} to retry`);
 
       // Try to apply each previously not-found annotation
       for (const id of previouslyNotFoundIds) {
         const annotation = annotations.find(a => a.id === id);
         if (!annotation) {
-          console.log(`Webtero: retryNotFoundHighlights - annotation ${id} not found in server response`);
+          if (LOG_LEVEL > 0) console.log(`Webtero: retryNotFoundHighlights - annotation ${id} not found in server response`);
           continue;
         }
 
-        console.log(`Webtero: retryNotFoundHighlights - retrying annotation:`, {
+        if (LOG_LEVEL > 0) console.log(`Webtero: retryNotFoundHighlights - retrying annotation:`, {
           id: annotation.id,
           text: annotation.text,
           xpath: annotation.position?.xpath,
@@ -913,7 +913,7 @@ async function retryNotFoundHighlights(): Promise<{ retriedCount: number; stillN
 
         // Skip if already applied (shouldn't happen, but be safe)
         if (document.querySelector(`.webtero-highlight[data-highlight-id="${id}"]`)) {
-          console.log(`Webtero: retryNotFoundHighlights - ${id} already has highlight element, skipping`);
+          if (LOG_LEVEL > 0) console.log(`Webtero: retryNotFoundHighlights - ${id} already has highlight element, skipping`);
           notFoundAnnotationIds.delete(id);
           continue;
         }
@@ -921,18 +921,18 @@ async function retryNotFoundHighlights(): Promise<{ retriedCount: number; stillN
         const success = applyStoredHighlight(annotation);
         if (success) {
           notFoundAnnotationIds.delete(id);
-          console.log(`Webtero: retryNotFoundHighlights - SUCCESS applied: ${id}`);
+          if (LOG_LEVEL > 0) console.log(`Webtero: retryNotFoundHighlights - SUCCESS applied: ${id}`);
         } else {
-          console.log(`Webtero: retryNotFoundHighlights - FAILED to apply: ${id}`);
+          if (LOG_LEVEL > 0) console.log(`Webtero: retryNotFoundHighlights - FAILED to apply: ${id}`);
         }
       }
 
       const stillNotFound = notFoundAnnotationIds.size;
-      console.log(`Webtero: Retry complete. ${retriedCount - stillNotFound}/${retriedCount} highlights applied. ${stillNotFound} still not found.`);
+      if (LOG_LEVEL > 0) console.log(`Webtero: Retry complete. ${retriedCount - stillNotFound}/${retriedCount} highlights applied. ${stillNotFound} still not found.`);
 
       return { retriedCount, stillNotFound };
     } else {
-      console.log('Webtero: retryNotFoundHighlights - response not successful or no data');
+      if (LOG_LEVEL > 0) console.log('Webtero: retryNotFoundHighlights - response not successful or no data');
     }
   } catch (error) {
     console.error('Failed to retry not-found highlights:', error);
@@ -958,7 +958,7 @@ function findTextRangeFromNode(startNode: Node, offset: number, searchText: stri
   }
 
   // Text spans multiple nodes - we need to walk the DOM
-  console.log('Webtero: Text spans multiple nodes, searching...');
+  if (LOG_LEVEL > 0) console.log('Webtero: Text spans multiple nodes, searching...');
 
   // Get the parent element to search within
   const parentElement = startNode.parentElement;
@@ -1065,14 +1065,14 @@ function applyStoredHighlight(annotation: Annotation): boolean {
   try {
     // Fix legacy XPath format: convert #text[n] to text()[n]
     let xpath = annotation.position.xpath;
-    console.log('Webtero: applyStoredHighlight - original xpath:', xpath);
+    if (LOG_LEVEL > 0) console.log('Webtero: applyStoredHighlight - original xpath:', xpath);
     if (xpath.includes('#text[')) {
       xpath = xpath.replace(/#text\[(\d+)\]/g, 'text()[$1]');
-      console.log('Webtero: applyStoredHighlight - converted xpath:', xpath);
+      if (LOG_LEVEL > 0) console.log('Webtero: applyStoredHighlight - converted xpath:', xpath);
     }
 
     const node = getNodeFromXPath(xpath);
-    console.log('Webtero: applyStoredHighlight - found node:', node, 'nodeType:', node?.nodeType);
+    if (LOG_LEVEL > 0) console.log('Webtero: applyStoredHighlight - found node:', node, 'nodeType:', node?.nodeType);
     if (!node || node.nodeType !== Node.TEXT_NODE) {
       console.warn('Webtero: Could not find text node for highlight:', xpath, 'got:', node);
       return false;
@@ -1091,7 +1091,7 @@ function applyStoredHighlight(annotation: Annotation): boolean {
       return false;
     }
 
-    console.log('Webtero: applyStoredHighlight - found range:', {
+    if (LOG_LEVEL > 0) console.log('Webtero: applyStoredHighlight - found range:', {
       startNode: range.startContainer,
       endNode: range.endContainer,
       startOffset: range.startOffset,
@@ -1099,7 +1099,7 @@ function applyStoredHighlight(annotation: Annotation): boolean {
     });
 
     applyVisualHighlight(range, annotation.color, annotation.id);
-    console.log('Webtero: applyStoredHighlight - successfully applied highlight');
+    if (LOG_LEVEL > 0) console.log('Webtero: applyStoredHighlight - successfully applied highlight');
     return true;
   } catch (error) {
     console.error('Webtero: Failed to apply stored highlight:', error);
@@ -1174,17 +1174,17 @@ document.addEventListener('click', (e) => {
 });
 
 // Load existing highlights when page loads
-console.log('Webtero: Initializing highlights, document.readyState:', document.readyState);
+if (LOG_LEVEL > 0) console.log('Webtero: Initializing highlights, document.readyState:', document.readyState);
 if (document.readyState === 'loading') {
-  console.log('Webtero: Document still loading, waiting for DOMContentLoaded');
+  if (LOG_LEVEL > 0) console.log('Webtero: Document still loading, waiting for DOMContentLoaded');
   document.addEventListener('DOMContentLoaded', () => {
-    console.log('Webtero: DOMContentLoaded fired, calling loadExistingHighlights');
+    if (LOG_LEVEL > 0) console.log('Webtero: DOMContentLoaded fired, calling loadExistingHighlights');
     highlightsLoadedPromise = loadExistingHighlights();
     // Retry after a short delay to handle dynamic content
     setTimeout(retryNotFoundHighlights, 1000);
   });
 } else {
-  console.log('Webtero: Document already loaded, calling loadExistingHighlights immediately');
+  if (LOG_LEVEL > 0) console.log('Webtero: Document already loaded, calling loadExistingHighlights immediately');
   highlightsLoadedPromise = loadExistingHighlights();
   // Retry after a short delay to handle dynamic content
   setTimeout(retryNotFoundHighlights, 1000);
@@ -1279,7 +1279,7 @@ async function injectSingleFileScripts(): Promise<void> {
  * SingleFile runs in the page context, so we use custom events to communicate
  */
 async function capturePageHTML(): Promise<string> {
-  console.log('Webtero: Starting page capture with SingleFile...');
+  if (LOG_LEVEL > 0) console.log('Webtero: Starting page capture with SingleFile...');
 
   try {
     // Inject SingleFile scripts into page context
@@ -1331,7 +1331,7 @@ async function capturePageHTML(): Promise<string> {
       }, 30000);
     });
 
-    console.log('Webtero: Page capture complete');
+    if (LOG_LEVEL > 0) console.log('Webtero: Page capture complete');
     return captureResult;
   } catch (error) {
     console.error('Webtero: SingleFile capture failed, falling back to basic capture:', error);
@@ -1657,7 +1657,7 @@ function handleOAuthCallback() {
 
   // Check if current URL is the OAuth callback
   if (currentUrl.startsWith(callbackUrl + '?')) {
-    console.log('Webtero: OAuth callback detected');
+    if (LOG_LEVEL > 0) console.log('Webtero: OAuth callback detected');
 
     // Extract query string
     const queryString = currentUrl.substring(callbackUrl.length + 1);
@@ -1670,7 +1670,7 @@ function handleOAuthCallback() {
       })
       .then((response) => {
         if (response?.success) {
-          console.log('Webtero: OAuth callback processed successfully');
+          if (LOG_LEVEL > 0) console.log('Webtero: OAuth callback processed successfully');
           // Show success message on the page
           document.body.innerHTML = `
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: system-ui, sans-serif;">

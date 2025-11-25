@@ -165,22 +165,22 @@ async function loadPageData() {
       await displayPageStatus();
 
       // Query content script for which annotations couldn't be found
-      console.log('Webtero sidebar: Querying for not-found annotations, currentAnnotations.length:', currentAnnotations.length);
+      if (LOG_LEVEL > 0) console.log('Webtero sidebar: Querying for not-found annotations, currentAnnotations.length:', currentAnnotations.length);
       if (currentTab?.id && currentAnnotations.length > 0) {
         try {
-          console.log('Webtero sidebar: Sending GET_NOT_FOUND_ANNOTATIONS to tab', currentTab.id);
+          if (LOG_LEVEL > 0) console.log('Webtero sidebar: Sending GET_NOT_FOUND_ANNOTATIONS to tab', currentTab.id);
           const notFoundResponse = await browser.tabs.sendMessage(currentTab.id, {
             type: 'GET_NOT_FOUND_ANNOTATIONS',
           });
-          console.log('Webtero sidebar: GET_NOT_FOUND_ANNOTATIONS response:', notFoundResponse);
+          if (LOG_LEVEL > 0) console.log('Webtero sidebar: GET_NOT_FOUND_ANNOTATIONS response:', notFoundResponse);
           if (notFoundResponse?.success && notFoundResponse.data?.notFoundIds) {
             const notFoundIds = new Set(notFoundResponse.data.notFoundIds);
-            console.log('Webtero sidebar: Not found IDs:', Array.from(notFoundIds));
+            if (LOG_LEVEL > 0) console.log('Webtero sidebar: Not found IDs:', Array.from(notFoundIds));
             currentAnnotations = currentAnnotations.map((ann) => ({
               ...ann,
               notFound: notFoundIds.has(ann.id),
             }));
-            console.log('Webtero sidebar: Updated annotations with notFound status');
+            if (LOG_LEVEL > 0) console.log('Webtero sidebar: Updated annotations with notFound status');
           }
         } catch (error) {
           // Content script may not be loaded yet, ignore
@@ -715,16 +715,16 @@ async function retryOutboxAnnotation(id: string) {
 
 // Refresh annotations
 refreshAnnotations.addEventListener('click', async () => {
-  console.log('Webtero sidebar: Refresh annotations clicked');
+  if (LOG_LEVEL > 0) console.log('Webtero sidebar: Refresh annotations clicked');
 
   // First, try to retry any not-found highlights in the content script
   if (currentTab?.id) {
     try {
-      console.log('Webtero sidebar: Sending RETRY_NOT_FOUND_HIGHLIGHTS to tab', currentTab.id);
+      if (LOG_LEVEL > 0) console.log('Webtero sidebar: Sending RETRY_NOT_FOUND_HIGHLIGHTS to tab', currentTab.id);
       const retryResult = await browser.tabs.sendMessage(currentTab.id, {
         type: 'RETRY_NOT_FOUND_HIGHLIGHTS',
       });
-      console.log('Webtero sidebar: RETRY_NOT_FOUND_HIGHLIGHTS result:', retryResult);
+      if (LOG_LEVEL > 0) console.log('Webtero sidebar: RETRY_NOT_FOUND_HIGHLIGHTS result:', retryResult);
     } catch (error) {
       // Content script may not be loaded, ignore
       console.debug('Webtero sidebar: Could not retry not-found highlights:', error);
@@ -732,7 +732,7 @@ refreshAnnotations.addEventListener('click', async () => {
   }
 
   // Then reload the page data to refresh the UI
-  console.log('Webtero sidebar: Calling loadPageData after retry');
+  if (LOG_LEVEL > 0) console.log('Webtero sidebar: Calling loadPageData after retry');
   await loadPageData();
 });
 
@@ -912,7 +912,7 @@ async function enableAutoSaveAndTracking(tabId: number, itemKey: string, url: st
       type: 'ENABLE_LINK_INDICATORS',
     });
 
-    console.log('Auto-save and tracking enabled for tab', tabId);
+    if (LOG_LEVEL > 0) console.log('Auto-save and tracking enabled for tab', tabId);
   } catch (error) {
     console.error('Failed to enable auto-save and tracking:', error);
   }

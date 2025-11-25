@@ -7,7 +7,7 @@ import * as zoteroOAuth from '../lib/zotero-oauth';
 
 const LOG_LEVEL = 0;
 
-console.log('Webtero background script loaded');
+if (LOG_LEVEL > 0) console.log('Webtero background script loaded');
 
 /**
  * Handle messages from sidebar and content scripts
@@ -17,7 +17,7 @@ browser.runtime.onMessage.addListener(
     message: Message,
     sender: browser.runtime.MessageSender
   ): Promise<MessageResponse> => {
-    console.log('Background received message:', message.type);
+    if (LOG_LEVEL > 0) console.log('Background received message:', message.type);
 
     try {
       switch (message.type) {
@@ -239,7 +239,7 @@ async function handleSavePage(data: {
     try {
       item = await zoteroAPI.getItem(existingPage.zoteroItemKey);
       isExistingItem = true;
-      console.log('Found existing item from local storage:', item.key);
+      if (LOG_LEVEL > 0) console.log('Found existing item from local storage:', item.key);
     } catch (error) {
       console.error('Failed to fetch existing item from storage:', error);
       // Item may have been deleted from Zotero, fall through to search/create
@@ -250,7 +250,7 @@ async function handleSavePage(data: {
   if (!item) {
     item = await zoteroAPI.findItemByUrl(normalizedUrl);
     if (item) {
-      console.log('Found existing item from API search:', item.key);
+      if (LOG_LEVEL > 0) console.log('Found existing item from API search:', item.key);
       isExistingItem = true;
     }
   }
@@ -262,7 +262,7 @@ async function handleSavePage(data: {
       data.title,
       collections
     );
-    console.log('Created new item:', item.key);
+    if (LOG_LEVEL > 0) console.log('Created new item:', item.key);
   }
 
   // Extract confirmed collections from API response
@@ -325,7 +325,7 @@ async function handleSavePage(data: {
         );
 
         snapshotSaved = true;
-        console.log('Snapshot saved successfully:', filename, isExistingItem ? '(added to existing item)' : '(new item)');
+        if (LOG_LEVEL > 0) console.log('Snapshot saved successfully:', filename, isExistingItem ? '(added to existing item)' : '(new item)');
       }
     }
   } catch (error) {
@@ -427,7 +427,7 @@ async function handleGetAnnotations(data: {
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
   const annotations = await storage.getAnnotationsByPage(normalizedUrl);
-  console.log('[webtero bg] Fetched annotations for', normalizedUrl, annotations.length);
+  if (LOG_LEVEL > 0) console.log('[webtero bg] Fetched annotations for', normalizedUrl, annotations.length);
   return {
     success: true,
     data: annotations,
@@ -751,7 +751,7 @@ async function handleStartFocusSession(
   // Get tab ID from sender if not provided
   const tabId = data.tabId !== -1 ? data.tabId : (sender.tab?.id ?? -1);
 
-  console.log('Webtero: Starting focus session for', data.itemKey, 'in tab', tabId);
+  if (LOG_LEVEL > 0) console.log('Webtero: Starting focus session for', data.itemKey, 'in tab', tabId);
 
   const session = {
     id: generateId(),
