@@ -1,6 +1,6 @@
 {
   "name": "webtero",
-  "version": "0.0.1",
+  "version": "0.0.7",
   "description": "Transform web research from scattered bookmarks into structured knowledge projects",
   "private": true,
   "type": "module",
