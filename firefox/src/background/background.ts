@@ -13,7 +13,7 @@ const savesInProgress = new Map<string, Promise<void>>();
 
 // Track pending auto-save by target URL (set when link is clicked)
 // When onUpdated fires with a matching URL, we transfer to pendingAutoSaveParents by tabId
-const pendingAutoSaveByUrl = new Map<string, { sourceItemKey: string; sourceUrl: string; expires: number }>();
+let pendingAutoSaveByUrl: Object | null = null; // { sourceItemKey: string; sourceUrl: string; expires: number };
 
 // Track pending auto-save by tabId (set when tab loads a URL from pendingAutoSaveByUrl)
 // Content script checks this on init to know if it should start auto-save countdown
@@ -187,12 +187,14 @@ browser.runtime.onMessage.addListener(
 
         case 'CHECK_PENDING_AUTO_SAVE':
           return await handleCheckPendingAutoSave(
-            message.data as { url: string; tabId: number }
+            message.data as { url: string; tabId: number },
+            sender
           );
 
         case 'EXECUTE_AUTO_SAVE':
           return await handleExecuteAutoSave(
-            message.data as { url: string; title: string; tabId: number }
+            message.data as { url: string; title: string; tabId: number; html?: string },
+            sender
           );
 
         case 'CANCEL_PENDING_AUTO_SAVE':
@@ -262,6 +264,8 @@ async function handleSavePage(data: {
   url: string;
   title: string;
   collections?: string[];
+  tabId?: number; // Optional: specific tab to capture from (for auto-save)
+  html?: string; // Optional: pre-captured HTML (for auto-save from content script)
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
   const collections = data.collections;
@@ -309,18 +313,34 @@ async function handleSavePage(data: {
 
   // Try to capture and upload snapshot
   try {
-    // Get active tab to capture HTML
-    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-    const activeTab = tabs[0];
+    let htmlContent: string | null = null;
 
-    if (activeTab?.id) {
-      // Request HTML capture from content script
-      const captureResponse = await browser.tabs.sendMessage(activeTab.id, {
-        type: 'CAPTURE_PAGE_HTML',
-      });
+    // Use pre-captured HTML if provided (from auto-save)
+    if (data.html) {
+      htmlContent = data.html;
+    } else {
+      // Get tab to capture HTML from
+      let captureTabId: number | undefined;
+      if (data.tabId) {
+        captureTabId = data.tabId;
+      } else {
+        const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+        captureTabId = tabs[0]?.id;
+      }
 
-      if (captureResponse?.success && captureResponse.data) {
-        const htmlContent = captureResponse.data as string;
+      if (captureTabId) {
+        // Request HTML capture from content script
+        const captureResponse = await browser.tabs.sendMessage(captureTabId, {
+          type: 'CAPTURE_PAGE_HTML',
+        });
+
+        if (captureResponse?.success && captureResponse.data) {
+          htmlContent = captureResponse.data as string;
+        }
+      }
+    }
+
+    if (htmlContent) {
 
         // Convert HTML string to Uint8Array
         const encoder = new TextEncoder();
@@ -361,7 +381,6 @@ async function handleSavePage(data: {
 
         snapshotSaved = true;
         if (LOG_LEVEL > 0) console.log('Snapshot saved successfully:', filename, isExistingItem ? '(added to existing item)' : '(new item)');
-      }
     }
   } catch (error) {
     // Log error but don't fail the save operation
@@ -934,13 +953,20 @@ function handleCheckSaveInProgress(data: { url: string }): MessageResponse {
 
 /**
  * Check if there's a pending auto-save for the given URL/tab.
- * Called by sidebar when it detects a URL change.
+ * Called by sidebar or content script when page loads.
  */
 async function handleCheckPendingAutoSave(
-  data: { url: string; tabId: number }
+  data: { url: string; tabId: number },
+  sender: browser.runtime.MessageSender
 ): Promise<MessageResponse> {
+  // Get tab ID from sender if not provided (content script sends -1)
+  const tabId = data.tabId >= 0 ? data.tabId : sender.tab?.id;
+  if (tabId === undefined) {
+    return { success: false, error: 'Could not determine tab ID' };
+  }
+
   // Check if this tab has a pending auto-save
-  const pending = pendingAutoSaveParents.get(data.tabId);
+  const pending = pendingAutoSaveParents.get(tabId);
   if (pending && Date.now() < pending.expires) {
     if (LOG_LEVEL > 0) console.log(`Webtero: Found pending auto-save for tab ${data.tabId}`);
     return {
@@ -973,13 +999,19 @@ function handleCancelPendingAutoSave(
 }
 
 /**
- * Execute auto-save from sidebar after the countdown completes.
+ * Execute auto-save from content script or sidebar after the countdown completes.
  * Creates the page snapshot and link record.
  */
 async function handleExecuteAutoSave(
-  data: { url: string; title: string; tabId: number }
+  data: { url: string; title: string; tabId: number; html?: string },
+  sender: browser.runtime.MessageSender
 ): Promise<MessageResponse> {
-  const tabId = data.tabId;
+  // Get tab ID from sender if not provided (content script sends -1)
+  const tabId = data.tabId >= 0 ? data.tabId : sender.tab?.id;
+  if (tabId === undefined) {
+    return { success: false, error: 'Could not determine tab ID' };
+  }
+
   const normalizedUrl = normalizeUrl(data.url);
 
   // Clean up the pending entry
@@ -1021,6 +1053,8 @@ async function handleExecuteAutoSave(
       url: normalizedUrl,
       title: data.title,
       collections: [],
+      tabId: tabId,
+      html: data.html, // Pass pre-captured HTML from content script
     });
     if (!saveResult.success) {
       throw new Error(saveResult.error || 'Failed to save page');
@@ -1067,20 +1101,26 @@ async function handleLinkClicked(
   data: { tabId: number; targetUrl: string },
   sender: browser.runtime.MessageSender
 ): Promise<MessageResponse> {
+  const LOG_LEVEL = 3;
+  console.log("[webtero bg] handleLinkClicked");
   // Check if auto-save is enabled in settings
   const settings = await storage.getSettings();
   if (!settings.autoSaveEnabled) {
+    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Aborted.  Auto-save is disabled in settings`);
     return { success: false, error: 'Auto-save is disabled in settings' };
   }
 
   // Get tab ID from sender (content script sends -1)
   const tabId = sender.tab?.id ?? data.tabId;
   if (tabId === undefined || tabId < 0) {
+    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Aborted.  Could not determine tab ID`);
+
     return { success: false, error: 'Could not determine tab ID' };
   }
 
   const autoSaveTab = await storage.getAutoSaveTab(tabId);
   if (!autoSaveTab?.enabled) {
+    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Aborted.  Auto-save not enabled for this tab`);
     return { success: false, error: 'Auto-save not enabled for this tab' };
   }
 
@@ -1089,6 +1129,7 @@ async function handleLinkClicked(
   // Check if target page is already saved - if so, just create link record
   const existingPage = await storage.getPage(targetUrl);
   if (existingPage) {
+    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Aborted.  Page already saved`);
     // Create a link record for already-saved page
     const link = {
       id: generateId(),
@@ -1104,11 +1145,11 @@ async function handleLinkClicked(
   // Store pending auto-save info temporarily by target URL
   // When the tab's onUpdated fires with this URL, we'll transfer to pendingAutoSaveParents by tabId
   // This handles both same-tab navigation and new tab opening
-  pendingAutoSaveByUrl.set(targetUrl, {
+  pendingAutoSaveByUrl = {
     sourceItemKey: autoSaveTab.sourceItemKey,
     sourceUrl: autoSaveTab.sourceUrl,
-    expires: Date.now() + 30000, // 30 seconds to account for slow loads
-  });
+    expires: Date.now() + 5000, // 5 seconds to account for slow loads
+  };
 
   if (LOG_LEVEL > 0) console.log(`Webtero: Recorded pending auto-save for ${targetUrl}`);
 
@@ -1506,7 +1547,12 @@ async function handleDeleteOutboxAnnotation(data: {
  */
 browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   // Only handle completed navigation with a URL
-  if (changeInfo.status !== 'complete' || !tab.url) return;
+  const LOG_LEVEL = 0;
+  if (LOG_LEVEL > 0) console.log("[webtero bg] tabs.onUpdated");
+  if (changeInfo.status !== 'complete' || !tab.url) {
+    if (LOG_LEVEL > 2) console.log("[webtero bg] tabs.onUpdated: Aborted.  status wasn't complete or tab url was falsey:", changeInfo, tab.url);
+    return
+  };
 
   // Skip internal pages
   if (tab.url.startsWith('about:') || tab.url.startsWith('moz-extension:')) return;
@@ -1514,38 +1560,41 @@ browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const normalizedUrl = normalizeUrl(tab.url);
 
   // Check if this URL has a pending auto-save request (from link click)
-  const pending = pendingAutoSaveByUrl.get(normalizedUrl);
-  if (pending && Date.now() < pending.expires) {
-    // Transfer to tabId-based tracking for content script to check
-    pendingAutoSaveParents.set(tabId, {
-      sourceItemKey: pending.sourceItemKey,
-      sourceUrl: pending.sourceUrl,
-      expires: Date.now() + AUTO_SAVE_DELAY_MS + 10000, // Extend expiry for content script
-    });
-
-    // Clean up the URL-based entry
-    pendingAutoSaveByUrl.delete(normalizedUrl);
-
-    // Also enable auto-save mode for this tab (for link tracking)
-    await storage.saveAutoSaveTab({
-      tabId,
-      sourceItemKey: pending.sourceItemKey,
-      sourceUrl: pending.sourceUrl,
-      enabled: true,
-    });
-
-    if (LOG_LEVEL > 0) console.log(`Webtero: Transferred pending auto-save to tab ${tabId} for ${normalizedUrl}`);
-
-    // Try to inject content script in case it didn't load
-    try {
-      await browser.scripting.executeScript({
-        target: { tabId },
-        files: ['content/content.js'],
+  if (pendingAutoSaveByUrl) {
+    if (Date.now() < pendingAutoSaveByUrl.expires) {
+      // Transfer to tabId-based tracking for content script to check
+      pendingAutoSaveParents.set(tabId, {
+        sourceItemKey: pendingAutoSaveByUrl.sourceItemKey,
+        sourceUrl: pendingAutoSaveByUrl.sourceUrl,
+        expires: Date.now() + AUTO_SAVE_DELAY_MS + 10000, // Extend expiry for content script
       });
-      if (LOG_LEVEL > 0) console.log(`Webtero: Re-injected content script into tab ${tabId}`);
-    } catch {
-      // Content script may already be loaded
-      if (LOG_LEVEL > 0) console.log(`Webtero: Content script injection skipped (may already be loaded)`);
+
+      // Also enable auto-save mode for this tab (for link tracking)
+      await storage.saveAutoSaveTab({
+        tabId,
+        sourceItemKey: pendingAutoSaveByUrl.sourceItemKey,
+        sourceUrl: pendingAutoSaveByUrl.sourceUrl,
+        enabled: true,
+      });
+
+      // Try to inject content script in case it didn't load
+      try {
+        await browser.scripting.executeScript({
+          target: { tabId },
+          files: ['content/content.js'],
+        });
+        if (LOG_LEVEL > 0) console.log(`Webtero: Re-injected content script into tab ${tabId}`);
+      } catch {
+        // Content script may already be loaded
+        if (LOG_LEVEL > 0) console.log(`Webtero: Content script injection skipped (may already be loaded)`);
+      }
+    } else {
+      // it's expired
+      pendingAutoSaveByUrl = null;
+    }
+  } else {
+    if (LOG_LEVEL > 0) {
+      console.log(`[webtero bg] tabs.onUpdated: No pending auto-save for ${normalizedUrl}`);
     }
   }
 });

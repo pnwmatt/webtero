@@ -480,18 +480,77 @@ function disableAutoSave() {
  * This handles the case when navigating from a saved page to a new page
  */
 async function checkAndEnableAutoSave() {
+  const LOG_LEVEL = 3;
   try {
     const response = await browser.runtime.sendMessage({
       type: 'CHECK_AUTO_SAVE',
       data: { tabId: -1 }, // Background will use sender.tab.id
     });
+    if (LOG_LEVEL > 2) console.log("[webtero content] checkAndEnableAutoSave response:", response);
     if (response.success && response.data?.enabled && response.data?.sourceItemKey) {
       enableAutoSave(response.data.sourceItemKey);
       if (LOG_LEVEL > 0) console.log('Webtero: Auto-save enabled from previous navigation');
+    } else {
+      console.log("[webtero content] checkAndEnableAutoSave response indicated no autosave enabled.");
     }
   } catch (error) {
     // Tab may not have auto-save state, that's fine
     if (LOG_LEVEL > 0) console.log('Webtero: No auto-save state for this tab');
+  }
+}
+
+/**
+ * Check if there's a pending auto-save for this page and trigger it after a delay.
+ * Called after DOM is idle. The content script handles the actual save.
+ */
+async function checkAndTriggerAutoSave() {
+  const LOG_LEVEL = 3;
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'CHECK_PENDING_AUTO_SAVE',
+      data: { url: window.location.href, tabId: -1 }, // Background will use sender.tab.id
+    });
+
+    if (LOG_LEVEL > 0) console.log('[webtero content] checkAndTriggerAutoSave response:', response);
+
+    if (response.success && response.data?.shouldAutoSave && response.data?.delayMs) {
+      const delayMs = response.data.delayMs;
+      const sourceItemKey = response.data.sourceItemKey;
+
+      // Enable auto-save mode for link tracking on this new page too
+      if (sourceItemKey) {
+        enableAutoSave(sourceItemKey);
+      }
+
+      if (LOG_LEVEL > 0) console.log(`[webtero content] Will auto-save in ${delayMs}ms`);
+
+      // Wait the delay, then trigger save
+      setTimeout(async () => {
+        if (LOG_LEVEL > 0) console.log('[webtero content] Auto-save delay complete, triggering save');
+
+        try {
+          // Capture the page HTML
+          const html = await capturePageHTML();
+
+          // Send to background to save
+          const saveResponse = await browser.runtime.sendMessage({
+            type: 'EXECUTE_AUTO_SAVE',
+            data: {
+              url: window.location.href,
+              title: document.title,
+              tabId: -1, // Background will use sender.tab.id
+              html: html,
+            },
+          });
+
+          if (LOG_LEVEL > 0) console.log('[webtero content] Auto-save response:', saveResponse);
+        } catch (error) {
+          console.error('[webtero content] Auto-save failed:', error);
+        }
+      }, delayMs);
+    }
+  } catch (error) {
+    if (LOG_LEVEL > 0) console.log('[webtero content] checkAndTriggerAutoSave error:', error);
   }
 }
 
@@ -1614,22 +1673,26 @@ document.addEventListener('click', (e) => {
 // Load existing highlights when page loads
 if (LOG_LEVEL > 0) console.log('Webtero: Initializing highlights, document.readyState:', document.readyState);
 if (document.readyState === 'loading') {
-  if (LOG_LEVEL > 0) console.log('Webtero: Document still loading, waiting for DOMContentLoaded');
+  console.log('Webtero: Document still loading, waiting for DOMContentLoaded');
   document.addEventListener('DOMContentLoaded', () => {
-    if (LOG_LEVEL > 0) console.log('Webtero: DOMContentLoaded fired, calling loadExistingHighlights');
+    console.log('Webtero: DOMContentLoaded fired, calling loadExistingHighlights');
     highlightsLoadedPromise = loadExistingHighlights();
     // Retry after a short delay to handle dynamic content
     setTimeout(retryNotFoundHighlights, 1000);
     // Check if auto-save should be enabled (for navigation from saved pages)
     checkAndEnableAutoSave();
+    // Check if there's a pending auto-save to trigger
+    checkAndTriggerAutoSave();
   });
 } else {
-  if (LOG_LEVEL > 0) console.log('Webtero: Document already loaded, calling loadExistingHighlights immediately');
+  console.log('Webtero: Document already loaded, calling loadExistingHighlights immediately');
   highlightsLoadedPromise = loadExistingHighlights();
   // Retry after a short delay to handle dynamic content
   setTimeout(retryNotFoundHighlights, 1000);
   // Check if auto-save should be enabled (for navigation from saved pages)
   checkAndEnableAutoSave();
+  // Check if there's a pending auto-save to trigger
+  checkAndTriggerAutoSave();
 }
 
 // === SINGLEFILE INTEGRATION ===

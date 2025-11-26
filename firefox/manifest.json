@@ -27,6 +27,9 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
+      "excludes": [
+        "*://*.zotero.org/*"
+      ],
       "js": ["content/content.js"],
       "css": ["content/content.css"],
       "run_at": "document_idle"

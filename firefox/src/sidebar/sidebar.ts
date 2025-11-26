@@ -163,9 +163,6 @@ async function getCurrentTab(): Promise<browser.tabs.Tab | null> {
 
 // Load page data
 async function loadPageData() {
-  // Cancel any active auto-save countdown when page changes
-  cancelAutoSaveCountdown();
-
   currentTab = await getCurrentTab();
   if (!currentTab?.url) {
     setPageStatusError('No active tab');
@@ -175,12 +172,13 @@ async function loadPageData() {
   // Check if on restricted page
   if (isRestrictedUrl(currentTab.url)) {
     pageStatus.style.display = 'block';
-    setEmptyMessage(pageStatus, 'Webtero is not available on this site.');
+    setEmptyMessage(pageStatus, 'Webtero is not available on this page.');
     pageActions.style.display = 'none';
     savePageBtn.disabled = true;
     // Reset Links and Annotations sections
-    setEmptyMessage(linksList, 'No links yet. Save this page and then click a link from this page to create a link.');
-    setEmptyMessage(annotationsList, 'No annotations yet. Highlight text on the page to create one.');
+    setEmptyMessage(linksList, '');
+    setEmptyMessage(annotationsList, '');
+    autoSaveIcon.style.display = 'none';
     return;
   }
 
@@ -273,6 +271,7 @@ function setEmptyMessage(element: HTMLElement, message: string) {
 async function displayPageStatus() {
   pageStatus.style.display = 'none';
   pageActions.style.display = 'block';
+  savePageBtn.style.display = 'block';
 
   // Reset page load time when displaying status
   pageLoadTime = new Date();
@@ -304,6 +303,8 @@ async function displayPageStatus() {
     }
   }
 
+  const LOG_LEVEL = 3;
+
   // Check if there's an outbox annotation currently saving the page
   const isSavingPage = currentOutboxAnnotations.some(
     (ann) => ann.status === 'saving_page' || ann.status === 'saving_annotation'
@@ -325,6 +326,7 @@ async function displayPageStatus() {
         type: 'CHECK_AUTO_SAVE',
         data: { tabId: currentTab.id },
       });
+      if (LOG_LEVEL > 2) console.log('[webtero sidebar] Auto-save check response:', autoSaveResponse);
       isAutoSaveEnabled = autoSaveResponse.success && autoSaveResponse.data?.enabled;
     } catch {
       // Ignore errors checking auto-save state
@@ -352,20 +354,30 @@ async function displayPageStatus() {
   let pendingAutoSave: { shouldAutoSave: boolean; delayMs?: number; sourceUrl?: string } = { shouldAutoSave: false };
   if (currentTab?.id && currentTab?.url && !currentPage && !isAutoSaveInProgress) {
     try {
+      console.log('[webtero sidebar] Checking for pending auto-save, tabId:', currentTab.id, 'url:', currentTab.url);
       const pendingResponse = await browser.runtime.sendMessage({
         type: 'CHECK_PENDING_AUTO_SAVE',
         data: { url: currentTab.url, tabId: currentTab.id },
       });
+      console.log('[webtero sidebar] Pending auto-save response:', pendingResponse);
       if (pendingResponse.success && pendingResponse.data?.shouldAutoSave) {
         pendingAutoSave = pendingResponse.data;
       }
-    } catch {
-      // Ignore errors
+    } catch (err) {
+      console.log('[webtero sidebar] Error checking pending auto-save:', err);
     }
+  } else {
+    console.log('[webtero sidebar] Skipping pending auto-save check:', {
+      hasTabId: !!currentTab?.id,
+      hasUrl: !!currentTab?.url,
+      currentPage: !!currentPage,
+      isAutoSaveInProgress,
+    });
   }
 
   // Start auto-save countdown if pending
   if (pendingAutoSave.shouldAutoSave && pendingAutoSave.delayMs && currentTab?.id) {
+    console.log('[webtero sidebar] Starting auto-save countdown');
     startAutoSaveCountdown(pendingAutoSave.delayMs, currentTab.id, currentTab.url!);
   }
 
@@ -541,7 +553,6 @@ function startAutoSaveCountdown(delayMs: number, tabId: number, url: string) {
 
   // Disable save button during countdown
   savePageBtn.disabled = true;
-  savePageBtn.textContent = 'Auto-saving...';
 
   // Update countdown every second
   autoSaveCountdownInterval = setInterval(() => {
@@ -1871,9 +1882,10 @@ browser.tabs.onActivated.addListener(() => {
 });
 
 browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.url) {
+  if (changeInfo.url || changeInfo.status === 'complete') {
     loadPageData();
   }
+
 });
 
 // Listen for annotation changes from background script
