@@ -1,7 +1,7 @@
 import type { SavedPage, Annotation, Project, Snapshot, OutboxAnnotation, Settings } from '../lib/types';
 import { DEFAULT_SETTINGS } from '../lib/types';
 import { storage } from '../lib/storage';
-import { formatDate } from '../lib/utils';
+import { formatDate, createAnnotationPreview } from '../lib/utils';
 import { config } from '../lib/config';
 
 const LOG_LEVEL = 0;
@@ -46,6 +46,13 @@ const versionsSection = document.getElementById('versionsSection') as HTMLDivEle
 const saveProgress = document.getElementById('saveProgress') as HTMLDivElement;
 const saveProgressFill = document.getElementById('saveProgressFill') as HTMLDivElement;
 const saveProgressText = document.getElementById('saveProgressText') as HTMLSpanElement;
+
+// DOM elements - Tab navigation
+const tabPage = document.getElementById('tabPage') as HTMLButtonElement;
+const tabProject = document.getElementById('tabProject') as HTMLButtonElement;
+const pageTabContent = document.getElementById('pageTabContent') as HTMLDivElement;
+const projectTabContent = document.getElementById('projectTabContent') as HTMLDivElement;
+const webHistoryList = document.getElementById('webHistoryList') as HTMLDivElement;
 
 let currentTab: browser.tabs.Tab | null = null;
 
@@ -163,6 +170,7 @@ async function getCurrentTab(): Promise<browser.tabs.Tab | null> {
 
 // Load page data
 async function loadPageData() {
+  switchTab('page');
   currentTab = await getCurrentTab();
   if (!currentTab?.url) {
     setPageStatusError('No active tab');
@@ -921,6 +929,23 @@ savePageBtn.addEventListener('click', async () => {
   savePageBtn.disabled = true;
   savePageBtn.style.display = 'none';
 
+  // Update auto-save toggle to show "On" immediately when save starts (if auto-save is enabled in settings)
+  if (cachedSettings.autoSaveEnabled) {
+    autoSaveToggle.style.display = 'inline-block';
+    updateAutoSaveToggleUI(true);
+  }
+
+  // Start early scroll observation immediately (don't wait for save to complete)
+  if (currentTab.id && cachedSettings.readingProgressEnabled) {
+    try {
+      await browser.tabs.sendMessage(currentTab.id, {
+        type: 'START_EARLY_SCROLL_OBSERVATION',
+      });
+    } catch {
+      // Content script may not be loaded yet
+    }
+  }
+
   // Show progress bar
   saveProgress.style.display = 'flex';
   saveProgressFill.style.width = '0%';
@@ -983,6 +1008,16 @@ savePageBtn.addEventListener('click', async () => {
       if (progressInterval) clearInterval(progressInterval);
       saveProgress.style.display = 'none';
       savePageBtn.style.display = 'block';
+      // Stop early scroll observation on failure
+      if (currentTab.id) {
+        try {
+          await browser.tabs.sendMessage(currentTab.id, {
+            type: 'STOP_EARLY_SCROLL_OBSERVATION',
+          });
+        } catch {
+          // Content script may not be loaded
+        }
+      }
       alert(`Failed to save page: ${response.error}`);
     }
   } catch (error) {
@@ -990,6 +1025,16 @@ savePageBtn.addEventListener('click', async () => {
     if (progressInterval) clearInterval(progressInterval);
     saveProgress.style.display = 'none';
     savePageBtn.style.display = 'block';
+    // Stop early scroll observation on failure
+    if (currentTab?.id) {
+      try {
+        await browser.tabs.sendMessage(currentTab.id, {
+          type: 'STOP_EARLY_SCROLL_OBSERVATION',
+        });
+      } catch {
+        // Content script may not be loaded
+      }
+    }
     alert('Failed to save page');
   } finally {
     savePageBtn.disabled = false;
@@ -1987,3 +2032,344 @@ browser.runtime.onMessage.addListener((message) => {
     loadPageData();
   }
 });
+
+// ============================================
+// TAB NAVIGATION
+// ============================================
+
+/**
+ * Switch between Page and Project tabs
+ */
+function switchTab(tab: 'page' | 'project') {
+  // Update tab buttons
+  tabPage.classList.toggle('active', tab === 'page');
+  tabProject.classList.toggle('active', tab === 'project');
+
+  // Update tab content
+  pageTabContent.classList.toggle('active', tab === 'page');
+  projectTabContent.classList.toggle('active', tab === 'project');
+
+  // Load web history when switching to project tab
+  if (tab === 'project') {
+    loadWebHistory();
+  }
+}
+
+// Tab click handlers
+tabPage.addEventListener('click', () => switchTab('page'));
+tabProject.addEventListener('click', () => switchTab('project'));
+
+// Project dropdown change handler - refresh web history when project changes
+projectDropdown.addEventListener('change', () => {
+  // If on project tab, reload the web history filtered by selected project
+  if (projectTabContent.classList.contains('active')) {
+    loadWebHistory();
+  }
+});
+
+// ============================================
+// WEB HISTORY (Project Tab)
+// ============================================
+
+interface WebHistoryItem {
+  page: SavedPage;
+  annotations: Annotation[];
+  readPercentage: number;
+  childLinks: Array<{
+    page: SavedPage;
+    readPercentage: number;
+  }>;
+}
+
+/**
+ * Load and display web history (saved pages with links and annotations)
+ */
+async function loadWebHistory() {
+  try {
+    // Get all saved pages
+    const pages = await storage.getAllPages();
+    let pagesArray = Object.values(pages);
+
+    // Filter by selected project if one is selected
+    const selectedProject = projectDropdown.value;
+    if (selectedProject) {
+      pagesArray = pagesArray.filter((page) => page.projects.includes(selectedProject));
+    }
+
+    if (pagesArray.length === 0) {
+      const message = selectedProject
+        ? 'No saved pages in this project.'
+        : 'No saved pages yet.';
+      webHistoryList.innerHTML = `<p class="empty">${message}</p>`;
+      return;
+    }
+
+    // Get all annotations and links
+    const annotations = await storage.getAllAnnotations();
+    const links = await storage.getAllPageLinks();
+
+    // Get read percentages for all pages
+    const readPercentages: Record<string, number> = {};
+    for (const page of pagesArray) {
+      try {
+        const response = await browser.runtime.sendMessage({
+          type: 'GET_PAGE_READ_PERCENTAGE',
+          data: { itemKey: page.zoteroItemKey },
+        });
+        if (response.success) {
+          readPercentages[page.zoteroItemKey] = response.data.percentage || 0;
+        }
+      } catch {
+        readPercentages[page.zoteroItemKey] = 0;
+      }
+    }
+
+    // Build page lookup by itemKey
+    const pageByItemKey: Record<string, SavedPage> = {};
+    for (const page of pagesArray) {
+      pageByItemKey[page.zoteroItemKey] = page;
+    }
+
+    // Group annotations by page
+    const annotationsByPage: Record<string, Annotation[]> = {};
+    for (const ann of Object.values(annotations)) {
+      if (!annotationsByPage[ann.zoteroItemKey]) {
+        annotationsByPage[ann.zoteroItemKey] = [];
+      }
+      annotationsByPage[ann.zoteroItemKey].push(ann);
+    }
+
+    // Group links by source page
+    const linksBySource: Record<string, Array<{ targetItemKey: string; targetUrl: string }>> = {};
+    for (const link of Object.values(links)) {
+      if (!linksBySource[link.sourceItemKey]) {
+        linksBySource[link.sourceItemKey] = [];
+      }
+      linksBySource[link.sourceItemKey].push({
+        targetItemKey: link.targetItemKey,
+        targetUrl: link.targetUrl,
+      });
+    }
+
+    // Find "root" pages (pages that aren't targets of any link, or were saved first)
+    const targetItemKeys = new Set(Object.values(links).map((l) => l.targetItemKey));
+    const rootPages = pagesArray.filter((p) => !targetItemKeys.has(p.zoteroItemKey));
+
+    // If no root pages (circular links), just use all pages sorted by date
+    const displayPages = rootPages.length > 0 ? rootPages : pagesArray;
+
+    // Sort by dateAdded descending
+    displayPages.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
+
+    // Build history items
+    const historyItems: WebHistoryItem[] = displayPages.map((page) => {
+      const pageAnnotations = annotationsByPage[page.zoteroItemKey] || [];
+      const pageLinks = linksBySource[page.zoteroItemKey] || [];
+
+      // Get child pages (pages linked from this page)
+      const childLinks = pageLinks
+        .map((link) => {
+          const childPage = pageByItemKey[link.targetItemKey];
+          if (!childPage) return null;
+          return {
+            page: childPage,
+            readPercentage: readPercentages[childPage.zoteroItemKey] || 0,
+          };
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null);
+
+      return {
+        page,
+        annotations: pageAnnotations.sort(
+          (a, b) => new Date(b.created).getTime() - new Date(a.created).getTime()
+        ),
+        readPercentage: readPercentages[page.zoteroItemKey] || 0,
+        childLinks,
+      };
+    });
+
+    // Render the history
+    renderWebHistory(historyItems);
+  } catch (error) {
+    console.error('Failed to load web history:', error);
+    webHistoryList.innerHTML = '<p class="empty error">Failed to load history.</p>';
+  }
+}
+
+/**
+ * Render web history items
+ */
+function renderWebHistory(items: WebHistoryItem[]) {
+  webHistoryList.textContent = '';
+
+  if (items.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = 'No saved pages yet.';
+    webHistoryList.appendChild(empty);
+    return;
+  }
+
+  for (const item of items) {
+    const historyItem = createHistoryItemElement(item);
+    webHistoryList.appendChild(historyItem);
+  }
+}
+
+/**
+ * Create a history item DOM element
+ */
+function createHistoryItemElement(item: WebHistoryItem): HTMLElement {
+  const container = document.createElement('div');
+  container.className = 'history-item';
+  container.dataset.itemKey = item.page.zoteroItemKey;
+
+  // Header row
+  const header = document.createElement('div');
+  header.className = 'history-item-header';
+
+  // Title
+  const title = document.createElement('span');
+  title.className = 'history-item-title';
+  title.textContent = item.page.title;
+  title.title = item.page.url;
+
+  // Read progress
+  const progress = createProgressElement(item.readPercentage, item.page.zoteroItemKey);
+
+  // Date
+  const date = document.createElement('span');
+  date.className = 'history-item-date';
+  date.textContent = formatDate(item.page.dateAdded);
+
+  header.appendChild(title);
+  header.appendChild(progress);
+  header.appendChild(date);
+
+  // Click header to open page
+  header.addEventListener('click', (e) => {
+    // Don't open if clicking on progress
+    if ((e.target as HTMLElement).closest('.history-progress')) return;
+    browser.tabs.create({ url: item.page.url });
+  });
+
+  container.appendChild(header);
+
+  // Child links (pages linked from this page)
+  if (item.childLinks.length > 0) {
+    const children = document.createElement('div');
+    children.className = 'history-children';
+
+    for (const child of item.childLinks) {
+      const childEl = document.createElement('div');
+      childEl.className = 'history-child';
+      childEl.dataset.itemKey = child.page.zoteroItemKey;
+
+      const icon = document.createElement('span');
+      icon.className = 'history-child-icon';
+      icon.textContent = '\u2514'; // └
+
+      const childTitle = document.createElement('span');
+      childTitle.className = 'history-child-title';
+      childTitle.textContent = child.page.title;
+      childTitle.title = child.page.url;
+
+      const childProgress = createProgressElement(child.readPercentage, child.page.zoteroItemKey, true);
+
+      childEl.appendChild(icon);
+      childEl.appendChild(childTitle);
+      childEl.appendChild(childProgress);
+
+      childEl.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('.history-progress')) return;
+        browser.tabs.create({ url: child.page.url });
+      });
+
+      children.appendChild(childEl);
+    }
+
+    container.appendChild(children);
+  }
+
+  // Annotation previews (max 5)
+  if (item.annotations.length > 0) {
+    const annotationsEl = document.createElement('div');
+    annotationsEl.className = 'history-annotations';
+
+    const maxAnnotations = 5;
+    const displayAnnotations = item.annotations.slice(0, maxAnnotations);
+
+    for (const ann of displayAnnotations) {
+      const preview = createAnnotationPreview(ann.text, ann.color, 60);
+      annotationsEl.appendChild(preview);
+    }
+
+    if (item.annotations.length > maxAnnotations) {
+      const more = document.createElement('div');
+      more.className = 'history-more-annotations';
+      more.textContent = `+${item.annotations.length - maxAnnotations} more`;
+      annotationsEl.appendChild(more);
+    }
+
+    container.appendChild(annotationsEl);
+  }
+
+  return container;
+}
+
+/**
+ * Create read progress element with hover-to-complete functionality
+ */
+function createProgressElement(percentage: number, itemKey: string, compact: boolean = false): HTMLElement {
+  const progress = document.createElement('div');
+  progress.className = 'history-progress' + (percentage >= 100 ? ' complete' : '');
+  progress.dataset.itemKey = itemKey;
+  progress.title = percentage >= 100 ? 'Completed' : `${percentage}% read - click to mark complete`;
+
+  const bar = document.createElement('div');
+  bar.className = 'history-progress-bar';
+
+  const fill = document.createElement('div');
+  fill.className = 'history-progress-fill';
+  fill.style.width = `${Math.min(percentage, 100)}%`;
+  bar.appendChild(fill);
+
+  const text = document.createElement('span');
+  text.className = 'history-progress-text';
+  text.textContent = `${percentage}%`;
+
+  const check = document.createElement('span');
+  check.className = 'history-progress-check';
+  check.textContent = '\u2713'; // ✓
+
+  progress.appendChild(bar);
+  if (!compact) {
+    progress.appendChild(text);
+  }
+  progress.appendChild(check);
+
+  // Click to mark as 100% read
+  progress.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (percentage >= 100) return; // Already complete
+
+    try {
+      const response = await browser.runtime.sendMessage({
+        type: 'SET_READ_PERCENTAGE',
+        data: { itemKey, percentage: 100 },
+      });
+
+      if (response.success) {
+        // Update UI
+        progress.classList.add('complete');
+        fill.style.width = '100%';
+        text.textContent = '100%';
+        progress.title = 'Completed';
+      }
+    } catch (error) {
+      console.error('Failed to set read percentage:', error);
+    }
+  });
+
+  return progress;
+}

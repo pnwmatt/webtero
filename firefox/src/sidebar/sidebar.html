@@ -49,104 +49,128 @@
       <button id="settingsBtn" class="header-settings-btn" title="Settings">&#9881;</button>
     </header>
 
-    <details class="section current-page" open>
-      <summary class="section-header">
-        <span class="chevron">&#8250;</span>
-        <h2>Current Page</h2>
-        <span id="savedIcon" class="saved-icon" style="display: none;" title="Saved to Zotero">&#10003;</span>
-        <button id="autoSaveToggle" class="auto-save-toggle" style="display: none;"
-          title="Toggle auto-save for links from this page">Auto-save Off</button>
-      </summary>
-      <div class="section-content">
-        <div id="pageStatus" class="page-status">
-          <p class="loading">Loading...</p>
-        </div>
-
-        <div id="pageActions" class="page-actions" style="display: none;">
-          <!-- Live Version - always visible -->
-          <div id="liveVersionSection" class="live-version-section">
-            <div class="live-version-header">
-              <span class="version-icon">&#9679;</span>
-              <span class="version-label">Live Version</span>
-              <span id="liveVersionDate" class="version-date"></span>
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+      <button id="tabPage" class="tab-btn active" data-tab="page">Page <span id="savedIcon" class="saved-icon"
+          style="display: none;" title="Saved to Zotero">&#10003;</span></button>
+      <button id="tabProject" class="tab-btn" data-tab="project">Project</button>
+    </nav>
+    
+    <!-- Page Tab Content -->
+    <div id="pageTabContent" class="tab-content active">
+      <details class="section current-page" open>
+        <summary class="section-header">
+          <span class="chevron">&#8250;</span>
+          <h2>Current Page</h2>
+          <button id="autoSaveToggle" class="auto-save-toggle" style="display: none;"
+            title="Toggle auto-save for links from this page">Auto-save Off</button>
+          </summary>
+          <div class="section-content">
+            <div id="pageStatus" class="page-status">
+              <p class="loading">Loading...</p>
             </div>
-            <button id="savePageBtn" class="save-btn" title="Save to Zotero">Save</button>
-          </div>
 
-          <!-- Read progress indicator (shown for saved pages) -->
-          <div id="readProgress" class="read-progress" style="display: none;">
-            <div class="read-progress-bar">
-              <div id="readProgressFill" class="read-progress-fill"></div>
-            </div>
-            <span id="readProgressText" class="read-progress-text">0% read</span>
-          </div>
-
-          <!-- Save progress indicator (shown during save operation) -->
-          <div id="saveProgress" class="save-progress" style="display: none;">
-            <div class="save-progress-bar">
-              <div id="saveProgressFill" class="save-progress-fill"></div>
-            </div>
-            <span id="saveProgressText" class="save-progress-text">Saving...</span>
-          </div>
-
-          <div id="savedInfo" class="saved-info" style="display: none;">
-            <p class="meta" id="savedProject"></p>
-            <p class="meta" id="savedDate"></p>
-
-            <!-- Past Versions list (snapshots only) -->
-            <div id="versionsSection" class="versions-section" style="display: none;">
-              <h4>Past Versions</h4>
-              <div id="versionsList" class="versions-list">
-                <!-- Snapshots will be populated here -->
+          <div id="pageActions" class="page-actions" style="display: none;">
+            <!-- Read progress indicator (shown for saved pages) -->
+            <div id="readProgress" class="read-progress" style="display: none;">
+              <div class="read-progress-bar">
+                <div id="readProgressFill" class="read-progress-fill"></div>
               </div>
+              <span id="readProgressText" class="read-progress-text">0% read</span>
+            </div>
+
+            <!-- Live Version - always visible -->
+            <div id="liveVersionSection" class="live-version-section">
+              <div class="live-version-header">
+                <span class="version-icon">&#9679;</span>
+                <span class="version-label">Live Version</span>
+                <span id="liveVersionDate" class="version-date"></span>
+              </div>
+              <button id="savePageBtn" class="save-btn" title="Save to Zotero">Save</button>
+            </div>
+
+
+            <!-- Save progress indicator (shown during save operation) -->
+            <div id="saveProgress" class="save-progress" style="display: none;">
+              <div class="save-progress-bar">
+                <div id="saveProgressFill" class="save-progress-fill"></div>
+              </div>
+              <span id="saveProgressText" class="save-progress-text">Saving...</span>
+            </div>
+
+            <div id="savedInfo" class="saved-info" style="display: none;">
+              <p class="meta" id="savedProject"></p>
+              <p class="meta" id="savedDate"></p>
+
+              <!-- Past Versions list (snapshots only) -->
+              <div id="versionsSection" class="versions-section" style="display: none;">
+                <h4>Past Versions</h4>
+                <div id="versionsList" class="versions-list">
+                  <!-- Snapshots will be populated here -->
+                </div>
+              </div>
+              </div>
+              </div>
+              </div>
+              </details>
+
+      <details class="section links" open>
+        <summary class="section-header">
+          <span class="chevron">&#8250;</span>
+          <h2>Links</h2>
+        </summary>
+        <div class="section-content">
+          <div id="linksView" class="links-view">
+            <div id="linksList" class="links">
+              <p class="empty">No links yet. Save this page and then click a link from this page to create a link.</p>
             </div>
           </div>
         </div>
-      </div>
-    </details>
+      </details>
 
-    <details class="section links" open>
-      <summary class="section-header">
-        <span class="chevron">&#8250;</span>
-        <h2>Links</h2>
-      </summary>
-      <div class="section-content">
-        <div id="linksView" class="links-view">
-          <div id="linksList" class="links">
-            <p class="empty">No links yet. Save this page and then click a link from this page to create a link.</p>
+      <details class="section annotations" open>
+        <summary class="section-header">
+          <span class="chevron">&#8250;</span>
+          <h2>Annotations</h2>
+          <button id="refreshAnnotations" title="Refresh">&#8635;</button>
+        </summary>
+        <div class="section-content">
+          <div id="annotationsView" class="annotations-view">
+            <div id="annotationsList" class="annotations">
+              <p class="empty">No annotations yet. Highlight text on the page to create one.</p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="section projects hidden" style="display: none;">
+        <summary class="section-header">
+          <span class="chevron">&#8250;</span>
+          <h2>Projects</h2>
+          <button id="syncProjects" title="Sync from Zotero">&#8635;</button>
+          <button id="newProject" title="New Project">+</button>
+        </summary>
+        <div class="section-content">
+          <div id="projectsList" class="projects-list">
+            <p class="empty">No projects. Click sync to load from Zotero.</p>
+          </div>
+        </div>
+      </details>
+    </div><!-- End Page Tab Content -->
+    
+    <!-- Project Tab Content -->
+    <div id="projectTabContent" class="tab-content">
+      <div class="section web-history">
+        <div class="section-header-static">
+          <h2>Web History</h2>
+        </div>
+        <div class="section-content">
+          <div id="webHistoryList" class="web-history-list">
+            <p class="empty">No saved pages yet.</p>
           </div>
         </div>
       </div>
-    </details>
-
-    <details class="section annotations" open>
-      <summary class="section-header">
-        <span class="chevron">&#8250;</span>
-        <h2>Annotations</h2>
-        <button id="refreshAnnotations" title="Refresh">&#8635;</button>
-      </summary>
-      <div class="section-content">
-        <div id="annotationsView" class="annotations-view">
-          <div id="annotationsList" class="annotations">
-            <p class="empty">No annotations yet. Highlight text on the page to create one.</p>
-          </div>
-        </div>
-      </div>
-    </details>
-
-    <details class="section projects hidden" style="display: none;">
-      <summary class="section-header">
-        <span class="chevron">&#8250;</span>
-        <h2>Projects</h2>
-        <button id="syncProjects" title="Sync from Zotero">&#8635;</button>
-        <button id="newProject" title="New Project">+</button>
-      </summary>
-      <div class="section-content">
-        <div id="projectsList" class="projects-list">
-          <p class="empty">No projects. Click sync to load from Zotero.</p>
-        </div>
-      </div>
-    </details>
+    </div><!-- End Project Tab Content -->
 
     <div id="newProjectModal" class="modal" style="display: none;">
       <div class="modal-content">

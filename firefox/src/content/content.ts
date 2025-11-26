@@ -110,6 +110,9 @@ let currentFocusSessionId: string | null = null;
 let currentItemKey: string | null = null;
 let scrollTrackingInterval: ReturnType<typeof setInterval> | null = null;
 let lastScrollPosition = { start: 0, end: 0 };
+let linkClickListenerActive = false; // Track whether link click listener is registered
+let earlyScrollObservationActive = false; // Track early scroll observation before itemKey is known
+let earlyScrollPositions: Array<{ start: number; end: number; timestamp: number }> = [];
 
 /**
  * Calculate the current viewport position as a percentage of document height
@@ -137,7 +140,63 @@ function getViewportPercentage(): { start: number; end: number } {
 }
 
 /**
- * Start tracking focus/scroll for a saved page
+ * Start early scroll observation before itemKey is known.
+ * This buffers scroll positions that will be sent once startFocusTracking is called.
+ * Called when auto-save countdown starts or when save button is clicked.
+ */
+function startEarlyScrollObservation() {
+  if (earlyScrollObservationActive || currentFocusSessionId) {
+    if (LOG_LEVEL > 0) console.log('Webtero: Early observation already active or session exists, skipping');
+    return;
+  }
+
+  if (LOG_LEVEL > 0) console.log('Webtero: Starting early scroll observation');
+  earlyScrollObservationActive = true;
+  earlyScrollPositions = [];
+
+  // Record initial position
+  const viewport = getViewportPercentage();
+  lastScrollPosition = viewport;
+  earlyScrollPositions.push({ ...viewport, timestamp: Date.now() });
+
+  // Start tracking scroll changes (without sending to background yet)
+  scrollTrackingInterval = setInterval(() => {
+    const newPosition = getViewportPercentage();
+    if (
+      Math.abs(newPosition.start - lastScrollPosition.start) > 1 ||
+      Math.abs(newPosition.end - lastScrollPosition.end) > 1
+    ) {
+      lastScrollPosition = newPosition;
+      earlyScrollPositions.push({ ...newPosition, timestamp: Date.now() });
+    }
+  }, 2000);
+
+  // Also add link click listener for link tracking
+  if (!linkClickListenerActive) {
+    document.addEventListener('click', handleLinkClick, true);
+    linkClickListenerActive = true;
+  }
+}
+
+/**
+ * Stop early scroll observation (called if save fails)
+ */
+function stopEarlyScrollObservation() {
+  if (!earlyScrollObservationActive) return;
+
+  if (LOG_LEVEL > 0) console.log('Webtero: Stopping early scroll observation');
+  earlyScrollObservationActive = false;
+  earlyScrollPositions = [];
+
+  if (scrollTrackingInterval) {
+    clearInterval(scrollTrackingInterval);
+    scrollTrackingInterval = null;
+  }
+}
+
+/**
+ * Start tracking focus/scroll for a saved page.
+ * If early scroll observation was active, sends buffered positions to the session.
  */
 async function startFocusTracking(itemKey: string) {
   if (LOG_LEVEL > 0) console.log('Webtero: startFocusTracking called for itemKey:', itemKey);
@@ -148,6 +207,26 @@ async function startFocusTracking(itemKey: string) {
   }
 
   currentItemKey = itemKey;
+
+  // Check if early observation was active - we'll use those buffered positions
+  const hadEarlyObservation = earlyScrollObservationActive;
+  const bufferedPositions = [...earlyScrollPositions];
+
+  // Clear early observation state
+  earlyScrollObservationActive = false;
+  earlyScrollPositions = [];
+
+  // Stop any existing interval (from early observation)
+  if (scrollTrackingInterval) {
+    clearInterval(scrollTrackingInterval);
+    scrollTrackingInterval = null;
+  }
+
+  // Add link click listener to track links from this saved page (only if not already active)
+  if (!linkClickListenerActive) {
+    document.addEventListener('click', handleLinkClick, true);
+    linkClickListenerActive = true;
+  }
 
   try {
     // Note: We pass tabId as -1 since content scripts can't access browser.tabs
@@ -163,7 +242,15 @@ async function startFocusTracking(itemKey: string) {
     if (response.success) {
       currentFocusSessionId = response.data.sessionId;
 
-      // Record initial position
+      // If we had early observation, send all buffered positions
+      if (hadEarlyObservation && bufferedPositions.length > 0) {
+        if (LOG_LEVEL > 0) console.log(`Webtero: Sending ${bufferedPositions.length} buffered scroll positions`);
+        for (const pos of bufferedPositions) {
+          await updateFocusSession({ start: pos.start, end: pos.end });
+        }
+      }
+
+      // Record current position (may duplicate last buffered, but that's fine - they get merged)
       const viewport = getViewportPercentage();
       lastScrollPosition = viewport;
       await updateFocusSession(viewport);
@@ -214,6 +301,12 @@ async function stopFocusTracking() {
   if (scrollTrackingInterval) {
     clearInterval(scrollTrackingInterval);
     scrollTrackingInterval = null;
+  }
+
+  // Remove link click listener (only if not in auto-save mode which keeps it active)
+  if (!autoSaveEnabled && linkClickListenerActive) {
+    document.removeEventListener('click', handleLinkClick, true);
+    linkClickListenerActive = false;
   }
 
   if (currentFocusSessionId) {
@@ -430,10 +523,13 @@ async function loadSavedUrlsAndIndicators() {
 }
 
 /**
- * Handle link clicks for auto-save
+ * Handle link clicks for link tracking and auto-save
+ * This tracks links from any saved page, and triggers auto-save if enabled
  */
 function handleLinkClick(event: MouseEvent) {
-  if (!autoSaveEnabled || !sourceItemKey) return;
+  // Use sourceItemKey (auto-save mode) or currentItemKey (any saved page)
+  const itemKey = sourceItemKey || currentItemKey;
+  if (!itemKey) return;
 
   const target = event.target as HTMLElement;
   const link = target.closest('a[href]') as HTMLAnchorElement;
@@ -443,13 +539,15 @@ function handleLinkClick(event: MouseEvent) {
   if (!href || href.startsWith('javascript:') || href.startsWith('#')) return;
 
   // Notify background script about the link click
-  // The actual save happens when the new page loads
+  // The background will create a link record if target is saved,
+  // or queue auto-save if auto-save is enabled and target is not saved
   browser.runtime
     .sendMessage({
       type: 'LINK_CLICKED',
       data: {
         tabId: -1, // Will be determined by sender
         targetUrl: href,
+        sourceItemKey: itemKey, // Pass the source item key directly
       },
     })
     .catch((error) => {
@@ -463,7 +561,10 @@ function handleLinkClick(event: MouseEvent) {
 function enableAutoSave(itemKey: string) {
   autoSaveEnabled = true;
   sourceItemKey = itemKey;
-  document.addEventListener('click', handleLinkClick, true);
+  if (!linkClickListenerActive) {
+    document.addEventListener('click', handleLinkClick, true);
+    linkClickListenerActive = true;
+  }
 }
 
 /**
@@ -472,7 +573,11 @@ function enableAutoSave(itemKey: string) {
 function disableAutoSave() {
   autoSaveEnabled = false;
   sourceItemKey = null;
-  document.removeEventListener('click', handleLinkClick, true);
+  // Only remove listener if focus tracking isn't keeping it active
+  if (!currentItemKey && linkClickListenerActive) {
+    document.removeEventListener('click', handleLinkClick, true);
+    linkClickListenerActive = false;
+  }
 }
 
 /**
@@ -522,6 +627,9 @@ async function checkAndTriggerAutoSave() {
         enableAutoSave(sourceItemKey);
       }
 
+      // Start early scroll observation immediately (don't wait for save to complete)
+      startEarlyScrollObservation();
+
       if (LOG_LEVEL > 0) console.log(`[webtero content] Will auto-save in ${delayMs}ms`);
 
       // Wait the delay, then trigger save
@@ -544,8 +652,17 @@ async function checkAndTriggerAutoSave() {
           });
 
           if (LOG_LEVEL > 0) console.log('[webtero content] Auto-save response:', saveResponse);
+
+          // Start focus tracking with the new itemKey (this will use buffered scroll positions)
+          if (saveResponse.success && saveResponse.data?.itemKey) {
+            startFocusTracking(saveResponse.data.itemKey);
+          } else {
+            // Save failed or no itemKey - stop early observation
+            stopEarlyScrollObservation();
+          }
         } catch (error) {
           console.error('[webtero content] Auto-save failed:', error);
+          stopEarlyScrollObservation();
         }
       }, delayMs);
     }
@@ -2077,6 +2194,16 @@ browser.runtime.onMessage.addListener((message, sender) => {
   }
 
   // Focus tracking messages
+  if (message.type === 'START_EARLY_SCROLL_OBSERVATION') {
+    startEarlyScrollObservation();
+    return Promise.resolve({ success: true });
+  }
+
+  if (message.type === 'STOP_EARLY_SCROLL_OBSERVATION') {
+    stopEarlyScrollObservation();
+    return Promise.resolve({ success: true });
+  }
+
   if (message.type === 'START_FOCUS_TRACKING') {
     const { itemKey } = message.data;
     startFocusTracking(itemKey);

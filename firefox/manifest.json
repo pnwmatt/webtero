@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Webtero",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Transform web research from scattered bookmarks into structured knowledge projects - now in Firefox!",
   "permissions": [
     "storage",
@@ -27,7 +27,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "excludes": [
+      "exclude_matches": [
         "*://*.zotero.org/*"
       ],
       "js": ["content/content.js"],

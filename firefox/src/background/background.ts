@@ -1094,34 +1094,34 @@ async function handleExecuteAutoSave(
 }
 
 /**
- * Handle a link click from a page with auto-save enabled.
- * Records the parent info so when the target page loads, content script can start auto-save.
+ * Handle a link click from a saved page.
+ * Creates link records for saved-to-saved navigation.
+ * Queues auto-save for unsaved targets if auto-save is enabled.
  */
 async function handleLinkClicked(
-  data: { tabId: number; targetUrl: string },
+  data: { tabId: number; targetUrl: string; sourceItemKey?: string },
   sender: browser.runtime.MessageSender
 ): Promise<MessageResponse> {
-  const LOG_LEVEL = 3;
-  console.log("[webtero bg] handleLinkClicked");
-  // Check if auto-save is enabled in settings
-  const settings = await storage.getSettings();
-  if (!settings.autoSaveEnabled) {
-    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Aborted.  Auto-save is disabled in settings`);
-    return { success: false, error: 'Auto-save is disabled in settings' };
-  }
+  const LOG_LEVEL = 0;
+  if (LOG_LEVEL > 0) console.log("[webtero bg] handleLinkClicked");
 
   // Get tab ID from sender (content script sends -1)
   const tabId = sender.tab?.id ?? data.tabId;
   if (tabId === undefined || tabId < 0) {
-    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Aborted.  Could not determine tab ID`);
-
+    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Could not determine tab ID`);
     return { success: false, error: 'Could not determine tab ID' };
   }
 
+  // Get source item key - prefer from message data, fallback to autoSaveTab
+  let sourceItemKey = data.sourceItemKey;
   const autoSaveTab = await storage.getAutoSaveTab(tabId);
-  if (!autoSaveTab?.enabled) {
-    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Aborted.  Auto-save not enabled for this tab`);
-    return { success: false, error: 'Auto-save not enabled for this tab' };
+  if (!sourceItemKey && autoSaveTab?.enabled) {
+    sourceItemKey = autoSaveTab.sourceItemKey;
+  }
+
+  if (!sourceItemKey) {
+    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: No source item key available`);
+    return { success: false, error: 'No source item key available' };
   }
 
   const targetUrl = normalizeUrl(data.targetUrl);
@@ -1129,17 +1129,24 @@ async function handleLinkClicked(
   // Check if target page is already saved - if so, just create link record
   const existingPage = await storage.getPage(targetUrl);
   if (existingPage) {
-    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Aborted.  Page already saved`);
+    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Target page already saved, creating link record`);
     // Create a link record for already-saved page
     const link = {
       id: generateId(),
-      sourceItemKey: autoSaveTab.sourceItemKey,
+      sourceItemKey: sourceItemKey,
       targetItemKey: existingPage.zoteroItemKey,
       targetUrl: targetUrl,
       created: new Date().toISOString(),
     };
     await storage.savePageLink(link);
     return { success: true, data: { link, targetPage: existingPage } };
+  }
+
+  // Target page is not saved - only queue auto-save if auto-save is enabled
+  const settings = await storage.getSettings();
+  if (!settings.autoSaveEnabled || !autoSaveTab?.enabled) {
+    if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Target not saved and auto-save not enabled`);
+    return { success: true, data: { linkNotCreated: true, reason: 'target not saved' } };
   }
 
   // Store pending auto-save info temporarily by target URL

@@ -101,7 +101,7 @@ export function normalizeUrl(url: string): string {
 }
 
 // Zotero annotation hex colors from zotero-reader defines.js
-const HIGHLIGHT_HEX_COLORS: Record<string, string> = {
+export const HIGHLIGHT_HEX_COLORS: Record<string, string> = {
   yellow: '#ffd400',
   red: '#ff6666',
   green: '#5fb236',
@@ -335,4 +335,37 @@ export function md5(data: Uint8Array): string {
   }
 
   return wordToHex(a) + wordToHex(b) + wordToHex(c) + wordToHex(d);
+}
+
+/**
+ * Create annotation preview DOM element for compact display
+ * Used in both content script (link indicators) and sidebar (web history)
+ */
+export function createAnnotationPreview(
+  text: string,
+  color: string,
+  maxLength: number = 80
+): HTMLElement {
+  const preview = document.createElement('div');
+  preview.className = 'history-annotation-preview';
+
+  const colorBar = document.createElement('div');
+  colorBar.className = 'history-annotation-color';
+  colorBar.style.backgroundColor = HIGHLIGHT_HEX_COLORS[color] || HIGHLIGHT_HEX_COLORS.yellow;
+
+  const textSpan = document.createElement('span');
+  textSpan.className = 'history-annotation-text';
+  textSpan.textContent = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+
+  preview.appendChild(colorBar);
+  preview.appendChild(textSpan);
+
+  return preview;
+}
+
+/**
+ * Truncate text with ellipsis
+ */
+export function truncateText(text: string, maxLength: number): string {
+  return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
 }
