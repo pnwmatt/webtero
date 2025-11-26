@@ -48,6 +48,32 @@ const saveProgressFill = document.getElementById('saveProgressFill') as HTMLDivE
 const saveProgressText = document.getElementById('saveProgressText') as HTMLSpanElement;
 
 let currentTab: browser.tabs.Tab | null = null;
+
+/**
+ * Send a message to the content script with retry logic.
+ * Useful when the content script may not be loaded yet.
+ */
+async function sendMessageToContentScript<T>(
+  tabId: number,
+  message: { type: string; [key: string]: unknown },
+  maxRetries = 3,
+  initialDelayMs = 100
+): Promise<T | null> {
+  let delay = initialDelayMs;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await browser.tabs.sendMessage(tabId, message);
+      return response as T;
+    } catch {
+      if (attempt < maxRetries - 1) {
+        // Wait before retrying with exponential backoff
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay *= 2;
+      }
+    }
+  }
+  return null;
+}
 let currentPage: SavedPage | null = null;
 let currentSnapshots: Snapshot[] = [];
 let currentAnnotations: Annotation[] = [];
@@ -300,6 +326,37 @@ async function displayPageStatus() {
   // Show/hide auto-save indicator
   autoSaveIcon.style.display = isAutoSaveEnabled ? 'inline' : 'none';
 
+  // Check if auto-save is in progress for this URL (show progress bar)
+  let isAutoSaveInProgress = false;
+  if (currentTab?.url && isAutoSaveEnabled && !currentPage) {
+    try {
+      const saveStatusResponse = await browser.runtime.sendMessage({
+        type: 'CHECK_SAVE_IN_PROGRESS',
+        data: { url: currentTab.url },
+      });
+      isAutoSaveInProgress = saveStatusResponse.success && saveStatusResponse.data?.inProgress;
+    } catch {
+      // Ignore errors checking save status
+    }
+  }
+
+  // Show saving progress if auto-save is in progress
+  if (isAutoSaveInProgress) {
+    saveProgress.style.display = 'flex';
+    saveProgressFill.style.width = '50%'; // Indeterminate progress
+    saveProgressText.textContent = 'Auto-saving...';
+    savePageBtn.disabled = true;
+    savePageBtn.textContent = 'Saving...';
+
+    // Poll until save completes, then refresh page data
+    pollAutoSaveCompletion(currentTab.url!);
+  } else {
+    // Only hide if we're not showing it for another reason
+    if (!isSavingPage) {
+      saveProgress.style.display = 'none';
+    }
+  }
+
   if (currentPage) {
     // Show saved state with versions
     savedInfo.style.display = 'block';
@@ -379,6 +436,60 @@ function stopReadProgressTimer() {
     clearInterval(readProgressTimer);
     readProgressTimer = null;
   }
+}
+
+// Track active auto-save polling to avoid duplicates
+let autoSavePollTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Poll until auto-save completes for a URL, then refresh page data
+ */
+function pollAutoSaveCompletion(url: string) {
+  // Clear any existing poll
+  if (autoSavePollTimer) {
+    clearInterval(autoSavePollTimer);
+    autoSavePollTimer = null;
+  }
+
+  let pollCount = 0;
+  const maxPolls = 60; // Max 60 seconds of polling
+
+  autoSavePollTimer = setInterval(async () => {
+    pollCount++;
+
+    try {
+      const response = await browser.runtime.sendMessage({
+        type: 'CHECK_SAVE_IN_PROGRESS',
+        data: { url },
+      });
+
+      const stillInProgress = response.success && response.data?.inProgress;
+
+      if (!stillInProgress || pollCount >= maxPolls) {
+        // Save completed or timed out - refresh page data
+        if (autoSavePollTimer) {
+          clearInterval(autoSavePollTimer);
+          autoSavePollTimer = null;
+        }
+
+        // Hide progress and refresh
+        saveProgress.style.display = 'none';
+        savePageBtn.disabled = false;
+        savePageBtn.textContent = 'Save';
+
+        // Reload page data to show saved state
+        await loadPageData();
+      }
+    } catch {
+      // Error checking - stop polling and refresh anyway
+      if (autoSavePollTimer) {
+        clearInterval(autoSavePollTimer);
+        autoSavePollTimer = null;
+      }
+      saveProgress.style.display = 'none';
+      await loadPageData();
+    }
+  }, 1000); // Poll every second
 }
 
 // Display versions list (snapshots only - Live Version is always shown in HTML)
@@ -1150,41 +1261,54 @@ function escapeHtml(text: string): string {
 
 /**
  * Enable auto-save mode and focus tracking for a tab
+ * Each message to the content script is wrapped separately since it may not be loaded yet
  */
 async function enableAutoSaveAndTracking(tabId: number, itemKey: string, url: string) {
-  try {
-    // Enable auto-save in background (only if setting is enabled)
-    if (cachedSettings.autoSaveEnabled) {
+  // Enable auto-save in background (only if setting is enabled)
+  if (cachedSettings.autoSaveEnabled) {
+    try {
       await browser.runtime.sendMessage({
         type: 'ENABLE_AUTO_SAVE',
         data: { tabId, sourceItemKey: itemKey, sourceUrl: url },
       });
+    } catch (error) {
+      console.debug('Failed to enable auto-save in background:', error);
+    }
 
+    try {
       await browser.tabs.sendMessage(tabId, {
         type: 'ENABLE_AUTO_SAVE_MODE',
         data: { itemKey },
       });
+    } catch {
+      // Content script may not be loaded yet - this is fine, it will check on load
     }
+  }
 
-    // Tell content script to start focus tracking (if enabled)
-    if (cachedSettings.readingProgressEnabled) {
+  // Tell content script to start focus tracking (if enabled)
+  if (cachedSettings.readingProgressEnabled) {
+    try {
       await browser.tabs.sendMessage(tabId, {
         type: 'START_FOCUS_TRACKING',
         data: { itemKey },
       });
+    } catch {
+      // Content script may not be loaded yet
     }
+  }
 
-    // Enable link indicators (if enabled)
-    if (cachedSettings.linkIndicatorsEnabled) {
+  // Enable link indicators (if enabled)
+  if (cachedSettings.linkIndicatorsEnabled) {
+    try {
       await browser.tabs.sendMessage(tabId, {
         type: 'ENABLE_LINK_INDICATORS',
       });
+    } catch {
+      // Content script may not be loaded yet
     }
-
-    if (LOG_LEVEL > 0) console.log('Auto-save and tracking enabled for tab', tabId);
-  } catch (error) {
-    console.error('Failed to enable auto-save and tracking:', error);
   }
+
+  if (LOG_LEVEL > 0) console.log('Auto-save and tracking enabled for tab', tabId);
 }
 
 /**
@@ -1268,18 +1392,16 @@ async function loadLinks() {
   }
 
   try {
-    // Get all outbound links from the content script
+    // Get all outbound links from the content script (with retry for slow-loading pages)
     let pageLinks: Array<{ url: string; text: string }> = [];
-    try {
-      const linksResponse = await browser.tabs.sendMessage(currentTab.id, {
-        type: 'GET_PAGE_LINKS_LIST',
-      });
-      if (linksResponse?.success) {
-        pageLinks = linksResponse.data || [];
-      }
-    } catch {
-      // Content script may not be loaded
-      console.debug('Could not get page links from content script');
+    const linksResponse = await sendMessageToContentScript<{ success: boolean; data?: typeof pageLinks }>(
+      currentTab.id,
+      { type: 'GET_PAGE_LINKS_LIST' },
+      3, // max retries
+      200 // initial delay ms (200ms -> 400ms -> 800ms)
+    );
+    if (linksResponse?.success) {
+      pageLinks = linksResponse.data || [];
     }
 
     // Get all saved URLs with their data

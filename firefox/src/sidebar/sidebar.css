@@ -311,12 +311,17 @@ body {
   margin-right: 0.5rem;
 }
 
-/* Auto-save icon (sync arrows) */
+/* Auto-save icon (link) */
 .auto-save-icon {
   color: var(--accent-blue50);
-  font-weight: bold;
-  font-size: 1rem;
   margin-right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.auto-save-icon svg {
+  display: block;
 }
 
 /* When savedIcon is hidden, autoSaveIcon should take margin-left: auto */

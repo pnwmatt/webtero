@@ -11,6 +11,18 @@ const LOG_LEVEL = 0;
 // This prevents multiple saves when annotations are queued rapidly
 const savesInProgress = new Map<string, Promise<void>>();
 
+// Track pending auto-save by target URL (set when link is clicked)
+// When onUpdated fires with a matching URL, we transfer to pendingAutoSaveParents by tabId
+const pendingAutoSaveByUrl = new Map<string, { sourceItemKey: string; sourceUrl: string; expires: number }>();
+
+// Track pending auto-save by tabId (set when tab loads a URL from pendingAutoSaveByUrl)
+// Content script checks this on init to know if it should start auto-save countdown
+const pendingAutoSaveParents = new Map<number, { sourceItemKey: string; sourceUrl: string; expires: number }>();
+
+// Auto-save delay in milliseconds (5 seconds)
+// Content script handles this delay to show UI feedback
+const AUTO_SAVE_DELAY_MS = 5000;
+
 if (LOG_LEVEL > 0) console.log('Webtero background script loaded');
 
 /**
@@ -166,6 +178,20 @@ browser.runtime.onMessage.addListener(
         case 'DELETE_OUTBOX_ANNOTATION':
           return await handleDeleteOutboxAnnotation(
             message.data as { id: string }
+          );
+
+        case 'CHECK_SAVE_IN_PROGRESS':
+          return handleCheckSaveInProgress(
+            message.data as { url: string }
+          );
+
+        case 'CONTENT_INITIALIZED':
+          return await handleContentInitialized(sender);
+
+        case 'EXECUTE_AUTO_SAVE':
+          return await handleExecuteAutoSave(
+            message.data as { url: string; title: string; sourceUrl: string },
+            sender
           );
 
         default:
@@ -889,9 +915,145 @@ async function handleCheckAutoSave(
 }
 
 /**
- * Handle a link click from a page with auto-save enabled
- * Auto-saves the target page and creates a link record
- * Uses the same queue logic as annotation saving to avoid duplicate saves
+ * Check if a save is in progress for a given URL
+ */
+function handleCheckSaveInProgress(data: { url: string }): MessageResponse {
+  const normalizedUrl = normalizeUrl(data.url);
+  const isInProgress = savesInProgress.has(normalizedUrl);
+  return {
+    success: true,
+    data: { inProgress: isInProgress },
+  };
+}
+
+/**
+ * Handle content script initialization.
+ * Checks if this tab has a pending auto-save and returns the info.
+ */
+async function handleContentInitialized(
+  sender: browser.runtime.MessageSender
+): Promise<MessageResponse> {
+  const tabId = sender.tab?.id;
+  if (tabId === undefined) {
+    return { success: false, error: 'Could not determine tab ID' };
+  }
+
+  // Check if this tab has a pending auto-save
+  const pending = pendingAutoSaveParents.get(tabId);
+  if (pending && Date.now() < pending.expires) {
+    if (LOG_LEVEL > 0) console.log(`Webtero: Content init found pending auto-save for tab ${tabId}`);
+    return {
+      success: true,
+      data: {
+        shouldAutoSave: true,
+        sourceItemKey: pending.sourceItemKey,
+        sourceUrl: pending.sourceUrl,
+        delayMs: AUTO_SAVE_DELAY_MS,
+      },
+    };
+  }
+
+  return {
+    success: true,
+    data: { shouldAutoSave: false },
+  };
+}
+
+/**
+ * Execute auto-save from content script after the countdown completes.
+ * Creates the page snapshot and link record.
+ */
+async function handleExecuteAutoSave(
+  data: { url: string; title: string; sourceUrl: string },
+  sender: browser.runtime.MessageSender
+): Promise<MessageResponse> {
+  const tabId = sender.tab?.id;
+  if (tabId === undefined) {
+    return { success: false, error: 'Could not determine tab ID' };
+  }
+
+  const normalizedUrl = normalizeUrl(data.url);
+
+  // Clean up the pending entry
+  pendingAutoSaveParents.delete(tabId);
+
+  // Check if page is already saved (might have been saved manually during countdown)
+  const existingPage = await storage.getPage(normalizedUrl);
+  if (existingPage) {
+    if (LOG_LEVEL > 0) console.log(`Webtero: Page already saved, creating link record only`);
+
+    // Get the source item key from the auto-save tab info
+    const autoSaveTab = await storage.getAutoSaveTab(tabId);
+    if (autoSaveTab) {
+      const link = {
+        id: generateId(),
+        sourceItemKey: autoSaveTab.sourceItemKey,
+        targetItemKey: existingPage.zoteroItemKey,
+        targetUrl: normalizedUrl,
+        created: new Date().toISOString(),
+      };
+      await storage.savePageLink(link);
+    }
+
+    return { success: true, data: { alreadySaved: true, itemKey: existingPage.zoteroItemKey } };
+  }
+
+  // Get the auto-save tab info for link creation
+  const autoSaveTab = await storage.getAutoSaveTab(tabId);
+  if (!autoSaveTab) {
+    return { success: false, error: 'Auto-save tab info not found' };
+  }
+
+  if (LOG_LEVEL > 0) console.log(`Webtero: Executing auto-save for ${normalizedUrl}`);
+
+  // Track the save to prevent duplicates
+  let saveResult: MessageResponse;
+  const savePromise = (async () => {
+    saveResult = await handleSavePage({
+      url: normalizedUrl,
+      title: data.title,
+      collections: [],
+    });
+    if (!saveResult.success) {
+      throw new Error(saveResult.error || 'Failed to save page');
+    }
+  })();
+
+  savesInProgress.set(normalizedUrl, savePromise);
+
+  try {
+    await savePromise;
+    const savedPage = await storage.getPage(normalizedUrl);
+
+    if (savedPage) {
+      // Create link record
+      const link = {
+        id: generateId(),
+        sourceItemKey: autoSaveTab.sourceItemKey,
+        targetItemKey: savedPage.zoteroItemKey,
+        targetUrl: normalizedUrl,
+        created: new Date().toISOString(),
+      };
+      await storage.savePageLink(link);
+
+      if (LOG_LEVEL > 0) console.log(`Webtero: Auto-save completed for ${normalizedUrl}, link created`);
+    }
+
+    return { success: true, data: saveResult!.data };
+  } catch (error) {
+    console.error('Webtero: Auto-save failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Auto-save failed',
+    };
+  } finally {
+    savesInProgress.delete(normalizedUrl);
+  }
+}
+
+/**
+ * Handle a link click from a page with auto-save enabled.
+ * Records the parent info so when the target page loads, content script can start auto-save.
  */
 async function handleLinkClicked(
   data: { tabId: number; targetUrl: string },
@@ -916,62 +1078,33 @@ async function handleLinkClicked(
 
   const targetUrl = normalizeUrl(data.targetUrl);
 
-  // Check if target page is already saved
-  let targetPage = await storage.getPage(targetUrl);
-
-  // If not saved, save it now (using the same queue logic as annotations)
-  if (!targetPage) {
-    // Check if a save is already in progress for this URL
-    const existingSavePromise = savesInProgress.get(targetUrl);
-    if (existingSavePromise) {
-      // Wait for the existing save to complete
-      await existingSavePromise;
-      targetPage = await storage.getPage(targetUrl);
-    } else {
-      // Start a new save and track it
-      const savePromise = (async () => {
-        const result = await handleSavePage({
-          url: targetUrl,
-          title: targetUrl, // Will be updated by content script
-          collections: [], // Use same collections as source? TBD
-        });
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to save page');
-        }
-      })();
-
-      savesInProgress.set(targetUrl, savePromise);
-
-      try {
-        await savePromise;
-        targetPage = await storage.getPage(targetUrl);
-      } catch (error) {
-        return { success: false, error: error instanceof Error ? error.message : 'Failed to save page' };
-      } finally {
-        savesInProgress.delete(targetUrl);
-      }
-    }
-  }
-
-  if (targetPage) {
-    // Create a link record
+  // Check if target page is already saved - if so, just create link record
+  const existingPage = await storage.getPage(targetUrl);
+  if (existingPage) {
+    // Create a link record for already-saved page
     const link = {
       id: generateId(),
       sourceItemKey: autoSaveTab.sourceItemKey,
-      targetItemKey: targetPage.zoteroItemKey,
+      targetItemKey: existingPage.zoteroItemKey,
       targetUrl: targetUrl,
       created: new Date().toISOString(),
     };
-
     await storage.savePageLink(link);
-
-    // Enable auto-save for the new tab (link clicks typically open in new tab or navigate)
-    // The content script will handle enabling auto-save when the page loads
-
-    return { success: true, data: { link, targetPage } };
+    return { success: true, data: { link, targetPage: existingPage } };
   }
 
-  return { success: false, error: 'Failed to save target page' };
+  // Store pending auto-save info temporarily by target URL
+  // When the tab's onUpdated fires with this URL, we'll transfer to pendingAutoSaveParents by tabId
+  // This handles both same-tab navigation and new tab opening
+  pendingAutoSaveByUrl.set(targetUrl, {
+    sourceItemKey: autoSaveTab.sourceItemKey,
+    sourceUrl: autoSaveTab.sourceUrl,
+    expires: Date.now() + 30000, // 30 seconds to account for slow loads
+  });
+
+  if (LOG_LEVEL > 0) console.log(`Webtero: Recorded pending auto-save for ${targetUrl}`);
+
+  return { success: true, data: { pending: true, targetUrl } };
 }
 
 /**
@@ -1222,7 +1355,7 @@ async function processQueuedAnnotation(annotationId: string): Promise<void> {
     browser.runtime.sendMessage({
       type: 'OUTBOX_ANNOTATION_COMPLETED',
       data: { id: annotationId, annotation: annotationResult.data },
-    }).catch(() => {});
+    }).catch(() => { });
 
   } catch (error) {
     console.error('Failed to process queued annotation:', error);
@@ -1273,7 +1406,7 @@ function notifyOutboxUpdate(annotationId: string): void {
       browser.runtime.sendMessage({
         type: 'OUTBOX_ANNOTATION_UPDATED',
         data: annotation,
-      }).catch(() => {});
+      }).catch(() => { });
     }
   });
 }
@@ -1349,7 +1482,62 @@ async function handleDeleteOutboxAnnotation(data: {
   browser.runtime.sendMessage({
     type: 'OUTBOX_ANNOTATION_DELETED',
     data: { id: data.id },
-  }).catch(() => {});
+  }).catch(() => { });
 
   return { success: true };
 }
+
+// ============================================
+// Tab Navigation Handling for Auto-Save
+// ============================================
+
+/**
+ * Listen for tab updates to transfer pending auto-save from URL-based to tabId-based tracking.
+ * When a tab loads a URL that was clicked from a saved page, we store it by tabId
+ * so the content script can check on init.
+ */
+browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // Only handle completed navigation with a URL
+  if (changeInfo.status !== 'complete' || !tab.url) return;
+
+  // Skip internal pages
+  if (tab.url.startsWith('about:') || tab.url.startsWith('moz-extension:')) return;
+
+  const normalizedUrl = normalizeUrl(tab.url);
+
+  // Check if this URL has a pending auto-save request (from link click)
+  const pending = pendingAutoSaveByUrl.get(normalizedUrl);
+  if (pending && Date.now() < pending.expires) {
+    // Transfer to tabId-based tracking for content script to check
+    pendingAutoSaveParents.set(tabId, {
+      sourceItemKey: pending.sourceItemKey,
+      sourceUrl: pending.sourceUrl,
+      expires: Date.now() + AUTO_SAVE_DELAY_MS + 10000, // Extend expiry for content script
+    });
+
+    // Clean up the URL-based entry
+    pendingAutoSaveByUrl.delete(normalizedUrl);
+
+    // Also enable auto-save mode for this tab (for link tracking)
+    await storage.saveAutoSaveTab({
+      tabId,
+      sourceItemKey: pending.sourceItemKey,
+      sourceUrl: pending.sourceUrl,
+      enabled: true,
+    });
+
+    if (LOG_LEVEL > 0) console.log(`Webtero: Transferred pending auto-save to tab ${tabId} for ${normalizedUrl}`);
+
+    // Try to inject content script in case it didn't load
+    try {
+      await browser.scripting.executeScript({
+        target: { tabId },
+        files: ['content/content.js'],
+      });
+      if (LOG_LEVEL > 0) console.log(`Webtero: Re-injected content script into tab ${tabId}`);
+    } catch {
+      // Content script may already be loaded
+      if (LOG_LEVEL > 0) console.log(`Webtero: Content script injection skipped (may already be loaded)`);
+    }
+  }
+});

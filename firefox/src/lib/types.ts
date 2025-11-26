@@ -288,7 +288,14 @@ export type MessageType =
   | 'QUEUE_ANNOTATION'
   | 'GET_OUTBOX_ANNOTATIONS'
   | 'RETRY_OUTBOX_ANNOTATION'
-  | 'DELETE_OUTBOX_ANNOTATION';
+  | 'DELETE_OUTBOX_ANNOTATION'
+  // Save status
+  | 'CHECK_SAVE_IN_PROGRESS'
+  | 'CHECK_AUTO_SAVE_COUNTDOWN'
+  // Content script initialization
+  | 'CONTENT_INITIALIZED'
+  // Auto-save execution from content script
+  | 'EXECUTE_AUTO_SAVE';
 
 export interface Message {
   type: MessageType;
