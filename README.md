@@ -2,6 +2,8 @@
 
 A Firefox extension that integrates web browsing with Zotero, enabling you to save pages, create annotations, and capture snapshots directly to your Zotero library.
 
+![webtero](https://github.com/user-attachments/assets/02b35134-2ce9-44b2-a441-20a4b997d82c)
+
 ## Features
 
 - Save web pages to Zotero collections with metadata extraction
