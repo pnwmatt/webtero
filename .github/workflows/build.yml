@@ -32,6 +32,10 @@ jobs:
         working-directory: firefox
         run: pnpm install --frozen-lockfile
 
+      - name: Install web-ext
+        working-directory: firefox
+        run: pnpm install web-ext
+
       - name: Build extension
         working-directory: firefox
         run: pnpm run build
