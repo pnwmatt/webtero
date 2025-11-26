@@ -7,12 +7,11 @@ A Firefox extension that integrates web browsing with Zotero, enabling you to sa
 ## Features
 
 - Save web pages to Zotero collections with metadata extraction
-- Create text highlights with 8 annotation colors matching Zotero's palette
+- Create text highlights with Zotero's 8 color options
 - Attach notes to highlights
-- Capture full-page snapshots (via SingleFile)
-- Track reading progress and time spent on pages
+- Capture full-page snapshots when you start annotating
+- Track reading progress and time spent on pages (saved locally in your browser)
 - OAuth authentication with Zotero Web API
-- Offline annotation queue with automatic sync
 
 ## Requirements
 
@@ -67,7 +66,7 @@ src/
 The extension supports two authentication methods:
 
 1. OAuth (recommended) - Authenticate via Zotero's OAuth flow
-2. API Key - Manual entry of Zotero API credentials (used for local development - disabled for distribution)
+2. API Key - Manual entry of Zotero API credentials (used for local development)
 
 Configure authentication in the extension options page.
 
