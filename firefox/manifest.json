@@ -21,6 +21,7 @@
   "sidebar_action": {
     "default_panel": "sidebar/sidebar.html",
     "default_title": "Webtero",
+    "default_icon": "sidebar/icon-w.svg",
     "open_at_install": true
   },
   "content_scripts": [
@@ -59,5 +60,9 @@
         ]
       }
     }
+  },
+  "icons": {
+    "32": "sidebar/icon-w.svg",
+    "64": "sidebar/icon-w.svg"
   }
 }
