@@ -1,0 +1,54 @@
+name: Publish to Firefox Add-ons
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: firefox/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: firefox
+        run: pnpm install --frozen-lockfile
+
+      - name: Install web-ext
+        working-directory: firefox
+        run: pnpm install web-ext
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download ${{ github.event.release.tag_name }} --pattern "*.zip" --dir firefox/
+
+      - name: Unzip extension
+        working-directory: firefox
+        run: |
+          mkdir -p extension
+          unzip *.zip -d extension
+
+      - name: Submit to Firefox Add-ons
+        working-directory: firefox
+        run: |
+          pnpm web-ext sign --source-dir=extension --api-key="$AMO_JWT_USER" --api-secret="$AMO_JWT_SECRET" --channel=listed --amo-metadata=metadata.json --approval-timeout=0
+        env:
+          AMO_JWT_USER: ${{ secrets.AMO_JWT_USER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}

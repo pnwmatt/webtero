@@ -52,6 +52,7 @@ if (!existsSync('dist')) {
 // Copy static files
 const staticFiles = [
   { from: 'manifest.json', to: 'dist/manifest.json' },
+  { from: 'metadata.json', to: 'dist/metadata.json' },
   { from: 'src/sidebar/icon-w.svg', to: 'dist/sidebar/icon-w.svg' },
   { from: 'src/sidebar/sidebar.html', to: 'dist/sidebar/sidebar.html' },
   { from: 'src/options/options.html', to: 'dist/options/options.html' },

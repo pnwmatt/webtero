@@ -1,10 +1,10 @@
 {
   "version": {
-    "license": "GNU AGPLv3"
+    "license": "AGPL-3.0-only"
   },
   "categories": {
     "firefox": [
-      "search"
+      "search-tools"
     ]
   },
   "requires_payment": false,
