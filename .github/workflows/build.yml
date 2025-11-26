@@ -48,11 +48,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: webtero-firefox-extension
-          path: firefox/dist/web-ext-artifacts/*.zip
+          path: firefox/web-ext-artifacts/*.zip
           if-no-files-found: error
 
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: firefox/dist/web-ext-artifacts/*.zip
+          files: firefox/web-ext-artifacts/*.zip
