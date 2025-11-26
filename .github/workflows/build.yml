@@ -56,3 +56,52 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: firefox/web-ext-artifacts/*.zip
+
+  release:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for tag operations
+
+      - name: Extract version from manifest.json
+        id: extract-version
+        run: |
+          VERSION=$(grep '"version":' firefox/manifest.json | sed 's/.*"version": "\(.*\)".*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Check if tag exists
+        id: tag-check
+        run: |
+          VERSION=${{ steps.extract-version.outputs.version }}
+          if git ls-remote --tags origin | grep -q "refs/tags/v$VERSION$"; then
+            echo "Tag v$VERSION already exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag v$VERSION does not exist, will create"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download artifact
+        if: steps.tag-check.outputs.exists == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: webtero-firefox-extension
+          path: artifacts
+
+      - name: Create tag and GitHub Release
+        if: steps.tag-check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=v${{ steps.extract-version.outputs.version }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a $TAG -m "Release $TAG"
+          git push origin $TAG
+          gh release create $TAG --generate-notes firefox/*.zip
