@@ -92,7 +92,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: webtero-firefox-extension
-          path: artifacts
+          path: firefox
 
       - name: Create tag and GitHub Release
         if: steps.tag-check.outputs.exists == 'false'
