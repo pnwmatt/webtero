@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Webtero",
-  "version": "0.0.7",
+  "version": "0.1.0",
   "description": "Transform web research from scattered bookmarks into structured knowledge projects - now in Firefox!",
   "permissions": [
     "storage",
