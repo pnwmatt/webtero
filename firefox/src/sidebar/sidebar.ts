@@ -49,6 +49,11 @@ const saveProgressText = document.getElementById('saveProgressText') as HTMLSpan
 
 let currentTab: browser.tabs.Tab | null = null;
 
+// Auto-save countdown state
+let autoSaveCountdownTimer: ReturnType<typeof setTimeout> | null = null;
+let autoSaveCountdownInterval: ReturnType<typeof setInterval> | null = null;
+let autoSaveCountdownSeconds: number = 0;
+
 /**
  * Send a message to the content script with retry logic.
  * Useful when the content script may not be loaded yet.
@@ -158,6 +163,9 @@ async function getCurrentTab(): Promise<browser.tabs.Tab | null> {
 
 // Load page data
 async function loadPageData() {
+  // Cancel any active auto-save countdown when page changes
+  cancelAutoSaveCountdown();
+
   currentTab = await getCurrentTab();
   if (!currentTab?.url) {
     setPageStatusError('No active tab');
@@ -340,6 +348,27 @@ async function displayPageStatus() {
     }
   }
 
+  // Check if there's a pending auto-save countdown for this tab
+  let pendingAutoSave: { shouldAutoSave: boolean; delayMs?: number; sourceUrl?: string } = { shouldAutoSave: false };
+  if (currentTab?.id && currentTab?.url && !currentPage && !isAutoSaveInProgress) {
+    try {
+      const pendingResponse = await browser.runtime.sendMessage({
+        type: 'CHECK_PENDING_AUTO_SAVE',
+        data: { url: currentTab.url, tabId: currentTab.id },
+      });
+      if (pendingResponse.success && pendingResponse.data?.shouldAutoSave) {
+        pendingAutoSave = pendingResponse.data;
+      }
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  // Start auto-save countdown if pending
+  if (pendingAutoSave.shouldAutoSave && pendingAutoSave.delayMs && currentTab?.id) {
+    startAutoSaveCountdown(pendingAutoSave.delayMs, currentTab.id, currentTab.url!);
+  }
+
   // Show saving progress if auto-save is in progress
   if (isAutoSaveInProgress) {
     saveProgress.style.display = 'flex';
@@ -350,6 +379,8 @@ async function displayPageStatus() {
 
     // Poll until save completes, then refresh page data
     pollAutoSaveCompletion(currentTab.url!);
+  } else if (autoSaveCountdownTimer) {
+    // Countdown is active, UI is handled by the countdown functions
   } else {
     // Only hide if we're not showing it for another reason
     if (!isSavingPage) {
@@ -490,6 +521,153 @@ function pollAutoSaveCompletion(url: string) {
       await loadPageData();
     }
   }, 1000); // Poll every second
+}
+
+/**
+ * Start the auto-save countdown with UI feedback in the sidebar
+ */
+function startAutoSaveCountdown(delayMs: number, tabId: number, url: string) {
+  // Don't start if already counting down
+  if (autoSaveCountdownTimer) {
+    return;
+  }
+
+  autoSaveCountdownSeconds = Math.ceil(delayMs / 1000);
+
+  // Show progress bar with countdown
+  saveProgress.style.display = 'flex';
+  saveProgressFill.style.width = '0%';
+  updateAutoSaveCountdownUI();
+
+  // Disable save button during countdown
+  savePageBtn.disabled = true;
+  savePageBtn.textContent = 'Auto-saving...';
+
+  // Update countdown every second
+  autoSaveCountdownInterval = setInterval(() => {
+    autoSaveCountdownSeconds--;
+    if (autoSaveCountdownSeconds > 0) {
+      updateAutoSaveCountdownUI();
+    }
+  }, 1000);
+
+  // Execute save after delay
+  autoSaveCountdownTimer = setTimeout(async () => {
+    // Clear interval
+    if (autoSaveCountdownInterval) {
+      clearInterval(autoSaveCountdownInterval);
+      autoSaveCountdownInterval = null;
+    }
+
+    // Update UI to show saving
+    saveProgressText.textContent = 'Saving...';
+    saveProgressFill.style.width = '50%';
+
+    try {
+      // Get current page title from the tab
+      let title = url;
+      try {
+        const tab = await browser.tabs.get(tabId);
+        title = tab.title || url;
+      } catch {
+        // Fall back to URL if tab lookup fails
+      }
+
+      // Execute the auto-save
+      const response = await browser.runtime.sendMessage({
+        type: 'EXECUTE_AUTO_SAVE',
+        data: { url, title, tabId },
+      });
+
+      if (response.success) {
+        saveProgressText.textContent = 'Saved!';
+        saveProgressFill.style.width = '100%';
+
+        // Refresh page data after a brief delay
+        setTimeout(async () => {
+          cancelAutoSaveCountdown();
+          await loadPageData();
+        }, 1000);
+      } else {
+        saveProgressText.textContent = `Failed: ${response.error || 'Unknown error'}`;
+        setTimeout(() => {
+          cancelAutoSaveCountdown();
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('Auto-save error:', error);
+      saveProgressText.textContent = 'Save failed';
+      setTimeout(() => {
+        cancelAutoSaveCountdown();
+      }, 3000);
+    }
+
+    autoSaveCountdownTimer = null;
+  }, delayMs);
+}
+
+/**
+ * Update the auto-save countdown UI
+ */
+function updateAutoSaveCountdownUI() {
+  const totalSeconds = 5; // Assuming 5 second countdown
+  const progress = ((totalSeconds - autoSaveCountdownSeconds) / totalSeconds) * 100;
+  saveProgressFill.style.width = `${progress}%`;
+
+  // Create text with cancel link
+  saveProgressText.textContent = '';
+  const textSpan = document.createElement('span');
+  textSpan.textContent = `Auto-saving in ${autoSaveCountdownSeconds}s... `;
+
+  const cancelLink = document.createElement('a');
+  cancelLink.href = '#';
+  cancelLink.textContent = 'Cancel';
+  cancelLink.style.color = 'inherit';
+  cancelLink.style.textDecoration = 'underline';
+  cancelLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    cancelAutoSaveCountdownAndNotify();
+  });
+
+  saveProgressText.appendChild(textSpan);
+  saveProgressText.appendChild(cancelLink);
+}
+
+/**
+ * Cancel the auto-save countdown and notify background
+ */
+async function cancelAutoSaveCountdownAndNotify() {
+  if (currentTab?.id) {
+    try {
+      await browser.runtime.sendMessage({
+        type: 'CANCEL_PENDING_AUTO_SAVE',
+        data: { tabId: currentTab.id },
+      });
+    } catch {
+      // Ignore errors
+    }
+  }
+  cancelAutoSaveCountdown();
+}
+
+/**
+ * Cancel the auto-save countdown (UI cleanup only)
+ */
+function cancelAutoSaveCountdown() {
+  if (autoSaveCountdownTimer) {
+    clearTimeout(autoSaveCountdownTimer);
+    autoSaveCountdownTimer = null;
+  }
+  if (autoSaveCountdownInterval) {
+    clearInterval(autoSaveCountdownInterval);
+    autoSaveCountdownInterval = null;
+  }
+
+  // Reset UI
+  saveProgress.style.display = 'none';
+  saveProgressText.textContent = '';
+  savePageBtn.disabled = false;
+  savePageBtn.textContent = 'Save';
 }
 
 // Display versions list (snapshots only - Live Version is always shown in HTML)

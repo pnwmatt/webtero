@@ -292,10 +292,10 @@ export type MessageType =
   // Save status
   | 'CHECK_SAVE_IN_PROGRESS'
   | 'CHECK_AUTO_SAVE_COUNTDOWN'
-  // Content script initialization
-  | 'CONTENT_INITIALIZED'
-  // Auto-save execution from content script
-  | 'EXECUTE_AUTO_SAVE';
+  // Auto-save (sidebar-driven)
+  | 'CHECK_PENDING_AUTO_SAVE'
+  | 'EXECUTE_AUTO_SAVE'
+  | 'CANCEL_PENDING_AUTO_SAVE';
 
 export interface Message {
   type: MessageType;

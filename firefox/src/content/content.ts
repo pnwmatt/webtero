@@ -495,191 +495,6 @@ async function checkAndEnableAutoSave() {
   }
 }
 
-// Auto-save countdown state
-let autoSaveCountdownTimer: ReturnType<typeof setTimeout> | null = null;
-let autoSaveCountdownOverlay: HTMLElement | null = null;
-
-/**
- * Notify background that content script has initialized and check for pending auto-save.
- * If there's a pending auto-save, start the countdown with UI feedback.
- */
-async function notifyContentInitialized() {
-  try {
-    const response = await browser.runtime.sendMessage({
-      type: 'CONTENT_INITIALIZED',
-    });
-
-    if (response.success && response.data?.shouldAutoSave) {
-      const { sourceItemKey, sourceUrl, delayMs } = response.data;
-      if (LOG_LEVEL > 0) console.log(`Webtero: Starting auto-save countdown (${delayMs}ms)`);
-
-      // Enable auto-save mode for link tracking
-      enableAutoSave(sourceItemKey);
-
-      // Start the countdown with UI
-      startAutoSaveCountdown(delayMs, sourceUrl);
-    }
-  } catch (error) {
-    if (LOG_LEVEL > 0) console.log('Webtero: Content init check failed:', error);
-  }
-}
-
-/**
- * Create and show the auto-save countdown overlay
- */
-function createAutoSaveOverlay(): HTMLElement {
-  const overlay = document.createElement('div');
-  overlay.id = 'webtero-autosave-overlay';
-  overlay.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: #1976d2;
-    color: white;
-    padding: 12px 16px;
-    border-radius: 8px;
-    font-family: system-ui, -apple-system, sans-serif;
-    font-size: 14px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    z-index: 2147483646;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  `;
-
-  const textSpan = document.createElement('span');
-  textSpan.id = 'webtero-autosave-text';
-  textSpan.textContent = 'Auto-saving in 5s...';
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.cssText = `
-    background: rgba(255,255,255,0.2);
-    border: 1px solid rgba(255,255,255,0.4);
-    color: white;
-    padding: 4px 12px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-  `;
-  cancelBtn.addEventListener('click', () => {
-    cancelAutoSaveCountdown();
-  });
-
-  overlay.appendChild(textSpan);
-  overlay.appendChild(cancelBtn);
-  document.body.appendChild(overlay);
-
-  return overlay;
-}
-
-/**
- * Start the auto-save countdown with visual feedback
- */
-function startAutoSaveCountdown(delayMs: number, sourceUrl: string) {
-  // Create overlay if not exists
-  if (!autoSaveCountdownOverlay) {
-    autoSaveCountdownOverlay = createAutoSaveOverlay();
-  }
-
-  const totalSeconds = Math.ceil(delayMs / 1000);
-  let remainingSeconds = totalSeconds;
-
-  // Update countdown text
-  const updateText = () => {
-    const textEl = document.getElementById('webtero-autosave-text');
-    if (textEl) {
-      textEl.textContent = `Auto-saving in ${remainingSeconds}s...`;
-    }
-  };
-
-  updateText();
-
-  // Countdown interval
-  const countdownInterval = setInterval(() => {
-    remainingSeconds--;
-    if (remainingSeconds > 0) {
-      updateText();
-    } else {
-      clearInterval(countdownInterval);
-    }
-  }, 1000);
-
-  // Set the actual save timer
-  autoSaveCountdownTimer = setTimeout(async () => {
-    clearInterval(countdownInterval);
-
-    // Update UI to show saving
-    const textEl = document.getElementById('webtero-autosave-text');
-    if (textEl) {
-      textEl.textContent = 'Saving...';
-    }
-
-    try {
-      // Execute the auto-save
-      const response = await browser.runtime.sendMessage({
-        type: 'EXECUTE_AUTO_SAVE',
-        data: {
-          url: window.location.href,
-          title: document.title,
-          sourceUrl: sourceUrl,
-        },
-      });
-
-      if (response.success) {
-        if (LOG_LEVEL > 0) console.log('Webtero: Auto-save completed');
-        // Show success briefly
-        if (textEl) {
-          textEl.textContent = 'Saved!';
-        }
-        setTimeout(() => {
-          removeAutoSaveOverlay();
-        }, 1500);
-      } else {
-        console.error('Webtero: Auto-save failed:', response.error);
-        if (textEl) {
-          textEl.textContent = `Failed: ${response.error}`;
-        }
-        setTimeout(() => {
-          removeAutoSaveOverlay();
-        }, 3000);
-      }
-    } catch (error) {
-      console.error('Webtero: Auto-save error:', error);
-      if (textEl) {
-        textEl.textContent = 'Save failed';
-      }
-      setTimeout(() => {
-        removeAutoSaveOverlay();
-      }, 3000);
-    }
-
-    autoSaveCountdownTimer = null;
-  }, delayMs);
-}
-
-/**
- * Cancel the auto-save countdown
- */
-function cancelAutoSaveCountdown() {
-  if (autoSaveCountdownTimer) {
-    clearTimeout(autoSaveCountdownTimer);
-    autoSaveCountdownTimer = null;
-  }
-  removeAutoSaveOverlay();
-  if (LOG_LEVEL > 0) console.log('Webtero: Auto-save cancelled by user');
-}
-
-/**
- * Remove the auto-save overlay
- */
-function removeAutoSaveOverlay() {
-  if (autoSaveCountdownOverlay) {
-    autoSaveCountdownOverlay.remove();
-    autoSaveCountdownOverlay = null;
-  }
-}
-
 // Track annotations that couldn't be found on the current page
 let notFoundAnnotationIds: Set<string> = new Set();
 let highlightsLoaded = false;
@@ -1807,8 +1622,6 @@ if (document.readyState === 'loading') {
     setTimeout(retryNotFoundHighlights, 1000);
     // Check if auto-save should be enabled (for navigation from saved pages)
     checkAndEnableAutoSave();
-    // Notify background and check for pending auto-save countdown
-    notifyContentInitialized();
   });
 } else {
   if (LOG_LEVEL > 0) console.log('Webtero: Document already loaded, calling loadExistingHighlights immediately');
@@ -1817,8 +1630,6 @@ if (document.readyState === 'loading') {
   setTimeout(retryNotFoundHighlights, 1000);
   // Check if auto-save should be enabled (for navigation from saved pages)
   checkAndEnableAutoSave();
-  // Notify background and check for pending auto-save countdown
-  notifyContentInitialized();
 }
 
 // === SINGLEFILE INTEGRATION ===

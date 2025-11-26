@@ -185,13 +185,19 @@ browser.runtime.onMessage.addListener(
             message.data as { url: string }
           );
 
-        case 'CONTENT_INITIALIZED':
-          return await handleContentInitialized(sender);
+        case 'CHECK_PENDING_AUTO_SAVE':
+          return await handleCheckPendingAutoSave(
+            message.data as { url: string; tabId: number }
+          );
 
         case 'EXECUTE_AUTO_SAVE':
           return await handleExecuteAutoSave(
-            message.data as { url: string; title: string; sourceUrl: string },
-            sender
+            message.data as { url: string; title: string; tabId: number }
+          );
+
+        case 'CANCEL_PENDING_AUTO_SAVE':
+          return handleCancelPendingAutoSave(
+            message.data as { tabId: number }
           );
 
         default:
@@ -927,21 +933,16 @@ function handleCheckSaveInProgress(data: { url: string }): MessageResponse {
 }
 
 /**
- * Handle content script initialization.
- * Checks if this tab has a pending auto-save and returns the info.
+ * Check if there's a pending auto-save for the given URL/tab.
+ * Called by sidebar when it detects a URL change.
  */
-async function handleContentInitialized(
-  sender: browser.runtime.MessageSender
+async function handleCheckPendingAutoSave(
+  data: { url: string; tabId: number }
 ): Promise<MessageResponse> {
-  const tabId = sender.tab?.id;
-  if (tabId === undefined) {
-    return { success: false, error: 'Could not determine tab ID' };
-  }
-
   // Check if this tab has a pending auto-save
-  const pending = pendingAutoSaveParents.get(tabId);
+  const pending = pendingAutoSaveParents.get(data.tabId);
   if (pending && Date.now() < pending.expires) {
-    if (LOG_LEVEL > 0) console.log(`Webtero: Content init found pending auto-save for tab ${tabId}`);
+    if (LOG_LEVEL > 0) console.log(`Webtero: Found pending auto-save for tab ${data.tabId}`);
     return {
       success: true,
       data: {
@@ -960,18 +961,25 @@ async function handleContentInitialized(
 }
 
 /**
- * Execute auto-save from content script after the countdown completes.
+ * Cancel a pending auto-save for a tab.
+ * Called by sidebar when user clicks cancel.
+ */
+function handleCancelPendingAutoSave(
+  data: { tabId: number }
+): MessageResponse {
+  pendingAutoSaveParents.delete(data.tabId);
+  if (LOG_LEVEL > 0) console.log(`Webtero: Cancelled pending auto-save for tab ${data.tabId}`);
+  return { success: true };
+}
+
+/**
+ * Execute auto-save from sidebar after the countdown completes.
  * Creates the page snapshot and link record.
  */
 async function handleExecuteAutoSave(
-  data: { url: string; title: string; sourceUrl: string },
-  sender: browser.runtime.MessageSender
+  data: { url: string; title: string; tabId: number }
 ): Promise<MessageResponse> {
-  const tabId = sender.tab?.id;
-  if (tabId === undefined) {
-    return { success: false, error: 'Could not determine tab ID' };
-  }
-
+  const tabId = data.tabId;
   const normalizedUrl = normalizeUrl(data.url);
 
   // Clean up the pending entry
