@@ -1,7 +1,7 @@
 # Webtero
 
 > [!WARNING]
-> At this moment Mozilla is still reviewing the app store listing for Webtero, meaning it isn't available or able to be distributed easily yet. If you'd like to try it out before its approved:
+> At this moment Mozilla is still reviewing the [app store listing for Webtero](https://addons.mozilla.org/en-US/firefox/addon/webtero/), meaning it isn't available or able to be distributed easily yet. If you'd like to try it out before its approved:
 > 
 > 1. Download `webtero-0.1.*.zip` from [Releases](https://github.com/pnwmatt/webtero/releases)
 > 2. Unzip it
