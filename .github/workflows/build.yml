@@ -42,7 +42,7 @@ jobs:
 
       - name: Build extension package
         working-directory: firefox/dist
-        run: web-ext build --overwrite-dest
+        run: pnpm web-ext build --overwrite-dest
 
       - name: Upload extension artifact
         uses: actions/upload-artifact@v4
