@@ -54,7 +54,8 @@
         <span class="chevron">&#8250;</span>
         <h2>Current Page</h2>
         <span id="savedIcon" class="saved-icon" style="display: none;" title="Saved to Zotero">&#10003;</span>
-        <button id="autoSaveToggle" class="auto-save-toggle" style="display: none;" title="Toggle auto-save for links from this page">Auto-save Off</button>
+        <button id="autoSaveToggle" class="auto-save-toggle" style="display: none;"
+          title="Toggle auto-save for links from this page">Auto-save Off</button>
       </summary>
       <div class="section-content">
         <div id="pageStatus" class="page-status">
@@ -72,20 +73,20 @@
             <button id="savePageBtn" class="save-btn" title="Save to Zotero">Save</button>
           </div>
 
-          <!-- Save progress indicator (shown during save operation) -->
-          <div id="saveProgress" class="save-progress" style="display: none;">
-            <div class="save-progress-bar">
-              <div id="saveProgressFill" class="save-progress-fill"></div>
-            </div>
-            <span id="saveProgressText" class="save-progress-text">Saving...</span>
-          </div>
-
           <!-- Read progress indicator (shown for saved pages) -->
           <div id="readProgress" class="read-progress" style="display: none;">
             <div class="read-progress-bar">
               <div id="readProgressFill" class="read-progress-fill"></div>
             </div>
             <span id="readProgressText" class="read-progress-text">0% read</span>
+          </div>
+
+          <!-- Save progress indicator (shown during save operation) -->
+          <div id="saveProgress" class="save-progress" style="display: none;">
+            <div class="save-progress-bar">
+              <div id="saveProgressFill" class="save-progress-fill"></div>
+            </div>
+            <span id="saveProgressText" class="save-progress-text">Saving...</span>
           </div>
 
           <div id="savedInfo" class="saved-info" style="display: none;">
@@ -118,20 +119,20 @@
       </div>
     </details>
 
-<details class="section annotations" open>
-  <summary class="section-header">
-    <span class="chevron">&#8250;</span>
-    <h2>Annotations</h2>
-    <button id="refreshAnnotations" title="Refresh">&#8635;</button>
-  </summary>
-  <div class="section-content">
-    <div id="annotationsView" class="annotations-view">
-      <div id="annotationsList" class="annotations">
-        <p class="empty">No annotations yet. Highlight text on the page to create one.</p>
+    <details class="section annotations" open>
+      <summary class="section-header">
+        <span class="chevron">&#8250;</span>
+        <h2>Annotations</h2>
+        <button id="refreshAnnotations" title="Refresh">&#8635;</button>
+      </summary>
+      <div class="section-content">
+        <div id="annotationsView" class="annotations-view">
+          <div id="annotationsList" class="annotations">
+            <p class="empty">No annotations yet. Highlight text on the page to create one.</p>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-</details>
+    </details>
 
     <details class="section projects hidden" style="display: none;">
       <summary class="section-header">
