@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Webtero",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Transform web research from scattered bookmarks into structured knowledge projects - now in Firefox!",
   "permissions": [
     "storage",
@@ -15,7 +15,9 @@
     "https://www.zotero.org/*"
   ],
   "background": {
-    "scripts": ["background/background.js"],
+    "scripts": [
+      "background/background.js"
+    ],
     "type": "module"
   },
   "sidebar_action": {
@@ -26,12 +28,15 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "exclude_matches": [
-        "*://*.zotero.org/*"
+      "matches": [
+        "<all_urls>"
       ],
-      "js": ["content/content.js"],
-      "css": ["content/content.css"],
+      "js": [
+        "content/content.js"
+      ],
+      "css": [
+        "content/content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -46,7 +51,9 @@
         "lib/singlefile/single-file-bootstrap.js",
         "lib/singlefile/single-file.js"
       ],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "browser_specific_settings": {
