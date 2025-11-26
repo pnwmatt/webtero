@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
   <link rel="stylesheet" href="../styles/reset.css">
   <link rel="stylesheet" href="options.css">
 </head>
+
 <body>
   <div class="container">
     <header>
@@ -15,6 +17,48 @@
     </header>
 
     <main>
+      <section class="sync-section">
+        <h2>Library Sync</h2>
+        <p class="section-description">Sync your Zotero collections (projects) with the extension.</p>
+        <div class="form-actions">
+          <button type="button" id="syncProjectsBtn">Sync Projects</button>
+        </div>
+        <div id="syncStatus" class="sync-status"></div>
+      </section>
+      
+      <section class="settings-section">
+        <h2>Display Settings</h2>
+      
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <input type="checkbox" id="linkIndicatorsEnabled" checked>
+            <span class="toggle-text">
+              <strong>Link indicators</strong>
+              <small>Show [wt X%] badges on links to saved pages</small>
+            </span>
+          </label>
+        </div>
+      
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <input type="checkbox" id="readingProgressEnabled" checked>
+            <span class="toggle-text">
+              <strong>Reading progress</strong>
+              <small>Track and display how much of each page you have read</small>
+            </span>
+          </label>
+        </div>
+      
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <input type="checkbox" id="autoSaveEnabled" checked>
+            <span class="toggle-text">
+              <strong>Auto-save linked pages</strong>
+              <small>Automatically save pages when clicking links from saved pages</small>
+            </span>
+          </label>
+        </div>
+      </section>
       <section class="auth-section">
         <h2>Zotero Authentication</h2>
 
@@ -33,24 +77,13 @@
         <form id="authForm">
           <div class="form-group">
             <label for="username">Username:</label>
-            <input
-              type="text"
-              id="username"
-              name="username"
-              placeholder="Zotero username"
-              readonly
-            >
+            <input type="text" id="username" name="username" placeholder="Zotero username" readonly>
             <small>Your Zotero username (set automatically via OAuth)</small>
           </div>
 
           <div class="form-group">
             <label for="userID">User ID:</label>
-            <input
-              type="text"
-              id="userID"
-              name="userID"
-              placeholder="Enter your Zotero user ID"
-            >
+            <input type="text" id="userID" name="userID" placeholder="Enter your Zotero user ID">
             <small>
               Find your user ID at
               <a href="https://www.zotero.org/settings/keys" target="_blank">
@@ -62,12 +95,7 @@
 
           <div class="form-group">
             <label for="apiKey">API Key:</label>
-            <input
-              type="text"
-              id="apiKey"
-              name="apiKey"
-              placeholder="Enter your Zotero API key"
-            >
+            <input type="text" id="apiKey" name="apiKey" placeholder="Enter your Zotero API key">
             <small>
               Get your API key from
               <a href="https://www.zotero.org/settings/keys" target="_blank">
@@ -83,51 +111,11 @@
         </form>
       </section>
 
-      <section class="sync-section">
-        <h2>Library Sync</h2>
-        <p class="section-description">Sync your Zotero collections (projects) with the extension.</p>
-        <div class="form-actions">
-          <button type="button" id="syncProjectsBtn">Sync Projects</button>
-        </div>
-        <div id="syncStatus" class="sync-status"></div>
-      </section>
 
-      <section class="settings-section">
-        <h2>Display Settings</h2>
-
-        <div class="toggle-group">
-          <label class="toggle-label">
-            <input type="checkbox" id="linkIndicatorsEnabled" checked>
-            <span class="toggle-text">
-              <strong>Link indicators</strong>
-              <small>Show [wt X%] badges on links to saved pages</small>
-            </span>
-          </label>
-        </div>
-
-        <div class="toggle-group">
-          <label class="toggle-label">
-            <input type="checkbox" id="readingProgressEnabled" checked>
-            <span class="toggle-text">
-              <strong>Reading progress</strong>
-              <small>Track and display how much of each page you have read</small>
-            </span>
-          </label>
-        </div>
-
-        <div class="toggle-group">
-          <label class="toggle-label">
-            <input type="checkbox" id="autoSaveEnabled" checked>
-            <span class="toggle-text">
-              <strong>Auto-save linked pages</strong>
-              <small>Automatically save pages when clicking links from saved pages</small>
-            </span>
-          </label>
-        </div>
-      </section>
     </main>
   </div>
 
   <script src="options.js" type="module"></script>
 </body>
+
 </html>

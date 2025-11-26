@@ -22,7 +22,7 @@ const savedInfo = document.getElementById('savedInfo') as HTMLDivElement;
 const savedDate = document.getElementById('savedDate') as HTMLParagraphElement;
 const savedProject = document.getElementById('savedProject') as HTMLParagraphElement;
 const savedIcon = document.getElementById('savedIcon') as HTMLSpanElement;
-const autoSaveIcon = document.getElementById('autoSaveIcon') as HTMLSpanElement;
+const autoSaveToggle = document.getElementById('autoSaveToggle') as HTMLButtonElement;
 const projectDropdown = document.getElementById('projectDropdown') as HTMLSelectElement;
 const savePageBtn = document.getElementById('savePageBtn') as HTMLButtonElement;
 const annotationsList = document.getElementById('annotationsList') as HTMLDivElement;
@@ -178,7 +178,7 @@ async function loadPageData() {
     // Reset Links and Annotations sections
     setEmptyMessage(linksList, '');
     setEmptyMessage(annotationsList, '');
-    autoSaveIcon.style.display = 'none';
+    autoSaveToggle.style.display = 'none';
     return;
   }
 
@@ -333,8 +333,14 @@ async function displayPageStatus() {
     }
   }
 
-  // Show/hide auto-save indicator
-  autoSaveIcon.style.display = isAutoSaveEnabled ? 'inline' : 'none';
+  // Show/hide auto-save toggle button and update its state
+  // Always visible when auto-save is enabled in settings (not just for saved pages)
+  if (cachedSettings.autoSaveEnabled) {
+    autoSaveToggle.style.display = 'inline-block';
+    updateAutoSaveToggleUI(isAutoSaveEnabled);
+  } else {
+    autoSaveToggle.style.display = 'none';
+  }
 
   // Check if auto-save is in progress for this URL (show progress bar)
   let isAutoSaveInProgress = false;
@@ -680,6 +686,79 @@ function cancelAutoSaveCountdown() {
   savePageBtn.disabled = false;
   savePageBtn.textContent = 'Save';
 }
+
+/**
+ * Update the auto-save toggle button UI based on enabled state
+ */
+function updateAutoSaveToggleUI(enabled: boolean) {
+  if (enabled) {
+    autoSaveToggle.textContent = 'Auto-save On';
+    autoSaveToggle.classList.add('active');
+    autoSaveToggle.title = 'Click to disable auto-save for links from this page';
+  } else {
+    autoSaveToggle.textContent = 'Auto-save Off';
+    autoSaveToggle.classList.remove('active');
+    autoSaveToggle.title = 'Click to enable auto-save for links from this page';
+  }
+}
+
+/**
+ * Toggle auto-save state for the current tab
+ */
+async function toggleAutoSave() {
+  if (!currentTab?.id || !currentPage?.zoteroItemKey || !currentTab?.url) return;
+
+  // Check current state
+  const isCurrentlyEnabled = autoSaveToggle.classList.contains('active');
+
+  if (isCurrentlyEnabled) {
+    // Disable auto-save
+    try {
+      await browser.runtime.sendMessage({
+        type: 'DISABLE_AUTO_SAVE',
+        data: { tabId: currentTab.id },
+      });
+      // Also tell content script
+      try {
+        await browser.tabs.sendMessage(currentTab.id, {
+          type: 'DISABLE_AUTO_SAVE_MODE',
+        });
+      } catch {
+        // Content script may not be loaded
+      }
+      updateAutoSaveToggleUI(false);
+    } catch (error) {
+      console.error('Failed to disable auto-save:', error);
+    }
+  } else {
+    // Enable auto-save
+    try {
+      await browser.runtime.sendMessage({
+        type: 'ENABLE_AUTO_SAVE',
+        data: {
+          tabId: currentTab.id,
+          sourceItemKey: currentPage.zoteroItemKey,
+          sourceUrl: currentTab.url,
+        },
+      });
+      // Also tell content script
+      try {
+        await browser.tabs.sendMessage(currentTab.id, {
+          type: 'ENABLE_AUTO_SAVE_MODE',
+          data: { itemKey: currentPage.zoteroItemKey },
+        });
+      } catch {
+        // Content script may not be loaded
+      }
+      updateAutoSaveToggleUI(true);
+    } catch (error) {
+      console.error('Failed to enable auto-save:', error);
+    }
+  }
+}
+
+// Auto-save toggle click handler
+autoSaveToggle.addEventListener('click', toggleAutoSave);
 
 // Display versions list (snapshots only - Live Version is always shown in HTML)
 function displayVersionsList() {

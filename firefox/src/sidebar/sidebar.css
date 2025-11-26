@@ -311,21 +311,34 @@ body {
   margin-right: 0.5rem;
 }
 
-/* Auto-save icon (link) */
-.auto-save-icon {
-  color: var(--accent-blue50);
-  margin-right: 0.5rem;
-  display: inline-flex;
-  align-items: center;
-  vertical-align: middle;
+/* Auto-save toggle button */
+.auto-save-toggle {
+  font-size: 0.5rem !important;
+  font-weight: 600;
+  padding: 0 0.25rem !important;
+  background: #f5f5f5;
+  border: 1px solid var(--fill-quinary);
+  border-radius: 2px;
+  color: var(--fill-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  margin-right: 0.25rem;
+  white-space: nowrap;
 }
 
-.auto-save-icon svg {
-  display: block;
+.auto-save-toggle:hover {
+  background: var(--fill-quinary);
 }
 
-/* When savedIcon is hidden, autoSaveIcon should take margin-left: auto */
-.saved-icon[style*="display: none"] + .auto-save-icon {
+.auto-save-toggle.active {
+  background: var(--accent-blue50);
+  border-color: var(--accent-blue50);
+  color: white;
+}
+
+/* When savedIcon is hidden, autoSaveToggle should take margin-left: auto */
+.saved-icon[style*="display: none"]+.auto-save-toggle {
   margin-left: auto;
 }
 
