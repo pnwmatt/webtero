@@ -42,6 +42,7 @@ A Firefox extension that integrates web browsing with Zotero, enabling you to sa
 
 ## FAQ
 
+- Users doing sensitive work may opt to disable automatic extension updates.  (I would love feedback on this note.). In Firefox, go to `about:config`, select `extensions.update.enabled` and set it to `false`.  You can then manually update the extension by downloading the latest release from the <a href="https://addons.mozilla.org/">Mozilla Add-ons site</a> or from the [GitHub releases page](https://github.com/pnwmatt/webtero/releases).
 - Forward/backward compatible: Annotations made in Zotero on a webpage (in the client or Zotero.com Web Library) will be visible when you surf to that page in Firefox.  Annotations made with Webtero are equally visible when viewing in the client or Zotero.com Web Library.
 - Uses your Zotero storage at the moment
 - Does not connect with your local Zotero, instead currently uses the Web API for Zotero (so your library must be synced with Zotero.com).  This can be fixed in the future but out-of-the-box Zotero's local APIs don't support this functionality.
