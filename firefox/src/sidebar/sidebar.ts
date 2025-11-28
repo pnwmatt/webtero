@@ -287,7 +287,7 @@ async function displayPageStatus() {
   // Load projects into the header dropdown
   await loadProjectsForDropdown();
 
-  // If dropdown is on "My Library" and current page has projects, switch to page's project
+  // If dropdown is on "My Zotero Library" and current page has projects, switch to page's project
   if (currentPage && currentPage.projects.length > 0 && projectDropdown.value === '') {
     // Get the most recently added project (pick the last one if multiple)
     const allProjects = await storage.getAllProjects();
@@ -915,17 +915,17 @@ async function loadProjectsForDropdown() {
   // Build hierarchical sorted list
   const sortedProjects = buildHierarchicalProjectList(projectsArray);
 
-  // Add default "My Library" option
+  // Add default "My Zotero Library" option
   const defaultOption = document.createElement('option');
   defaultOption.value = '';
-  defaultOption.textContent = 'My Library (no project)';
+  defaultOption.textContent = 'My Zotero Library (no project)';
   projectDropdown.appendChild(defaultOption);
 
   // Add project options
   for (const p of sortedProjects) {
     const option = document.createElement('option');
     option.value = p.id;
-    option.textContent = (p.parentId ? '\u00A0\u00A0' : '') + p.name + p.backend;
+    option.textContent = (p.parentId ? '\u00A0\u00A0' : '') + p.name;
     projectDropdown.appendChild(option);
   }
 
@@ -1002,7 +1002,7 @@ savePageBtn.addEventListener('click', async () => {
     if (projectDropdown.multiple) {
       collections = Array.from(projectDropdown.selectedOptions)
         .map(opt => opt.value)
-        .filter(val => val !== ''); // Filter out "My Library" option
+        .filter(val => val !== ''); // Filter out "My Zotero Library" option
     } else {
       const selectedProject = projectDropdown.value;
       collections = selectedProject ? [selectedProject] : [];

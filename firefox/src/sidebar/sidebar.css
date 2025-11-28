@@ -219,6 +219,7 @@ body {
   cursor: pointer;
   padding: 0.25rem;
   color: var(--fill-secondary);
+  vertical-align: top;
 }
 
 .header-settings-btn:hover {

@@ -83,27 +83,22 @@ class Storage {
   }
 
   // Page operations
-  async getPage(url: string): Promise<SavedPage | undefined> {
+  async getPagesForAURL(url: string): Promise<SavedPage[] | undefined> {
     const pages = await this.get('pages');
     return pages?.[url];
   }
 
-  async getAllPages(): Promise<Record<string, SavedPage>> {
+  async getAllPages(): Promise<Record<string, SavedPage[]>> {
     return (await this.get('pages')) ?? {};
   }
 
   async savePage(page: SavedPage): Promise<void> {
-    const pages = (await this.get('pages')) ?? {};
-    pages[page.url] = page;
-    await this.set('pages', pages);
-  }
-
-  async deletePage(url: string): Promise<void> {
-    const pages = await this.get('pages');
-    if (pages && pages[url]) {
-      delete pages[url];
-      await this.set('pages', pages);
+    const allPages = (await this.getAllPages()) ?? {};
+    if (!allPages[page.url]) {
+      allPages[page.url] = [];
     }
+    allPages[page.url].push(page);
+    await this.set('pages', allPages);
   }
 
   // Annotation operations

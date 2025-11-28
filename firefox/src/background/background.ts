@@ -43,7 +43,7 @@ browser.runtime.onMessage.addListener(
 
         case 'SAVE_PAGE':
           return await handleSavePage(
-            message.data as { url: string; title: string; collections?: string[] }
+            message.data as { url: string; title: string; projects?: string[] }
           );
 
         case 'CREATE_ANNOTATION':
@@ -226,7 +226,7 @@ async function handleGetPageData(data: {
   url: string;
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
-  const page = await storage.getPage(normalizedUrl);
+  const page = await storage.getPagesForAURL(normalizedUrl);
   const annotations = await storage.getAnnotationsByPage(normalizedUrl);
 
   // Fetch snapshots if page exists in Zotero
@@ -237,9 +237,9 @@ async function handleGetPageData(data: {
     url: string;
   }> = [];
 
-  if (page?.zoteroItemKey) {
+  if (page?.backend == 'zotero' && page?.key) {
     try {
-      const zoteroSnapshots = await zoteroAPI.getSnapshots(page.zoteroItemKey);
+      const zoteroSnapshots = await zoteroAPI.getSnapshots(page.key);
       snapshots = zoteroSnapshots.map((s) => ({
         key: s.key,
         title: s.data.title || 'Snapshot',
@@ -267,144 +267,214 @@ async function handleGetPageData(data: {
 async function handleSavePage(data: {
   url: string;
   title: string;
-  collections?: string[];
+  projects?: string[];
   tabId?: number; // Optional: specific tab to capture from (for auto-save)
   html?: string; // Optional: pre-captured HTML (for auto-save from content script)
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
-  const collections = data.collections;
+  const projects = data.projects;
 
-  // Check if an item already exists for this URL
-  let item: Awaited<ReturnType<typeof zoteroAPI.findItemByUrl>> = null;
-  let isExistingItem = false;
+  const zoteroWebpageItems = [];
+  const atlosIncidentSums = [];
+  const atlosSourceMaterial = [];
 
-  // First check local storage for existing item key
-  const existingPage = await storage.getPage(normalizedUrl);
-  if (existingPage?.zoteroItemKey) {
-    try {
-      item = await zoteroAPI.getItem(existingPage.zoteroItemKey);
-      isExistingItem = true;
-      if (LOG_LEVEL > 0) console.log('Found existing item from local storage:', item.key);
-    } catch (error) {
-      console.error('Failed to fetch existing item from storage:', error);
-      // Item may have been deleted from Zotero, fall through to search/create
+  // for each projects
+
+  for (const pName of projects ?? []) {
+    const project = await storage.getProject(pName);
+    const confirmedCollections = [];
+    let isExistingZoteroItem = false;
+    if (!project) {
+      return { success: false, error: `Project not found: ${pName}` };
+      handleSyncZoteroProjects();
+      handleSyncAtlosProjects();
     }
-  }
+    if (project.backend === 'zotero') {
 
-  // Fall back to API search if not found locally
-  if (!item) {
-    item = await zoteroAPI.findItemByUrl(normalizedUrl);
-    if (item) {
-      if (LOG_LEVEL > 0) console.log('Found existing item from API search:', item.key);
-      isExistingItem = true;
-    }
-  }
+      // Check if an item already exists for this URL
+      let item: Awaited<ReturnType<typeof zoteroAPI.findItemByUrl>> = null;
 
-  // Create new item if none found
-  if (!item) {
-    item = await zoteroAPI.createWebpageItem(
-      normalizedUrl,
-      data.title,
-      collections
-    );
-    if (LOG_LEVEL > 0) console.log('Created new item:', item.key);
-  }
 
-  // Extract confirmed collections from API response
-  const confirmedCollections = item.data.collections ?? [];
-
-  let snapshotSaved = false;
-
-  // Try to capture and upload snapshot
-  try {
-    let htmlContent: string | null = null;
-
-    // Use pre-captured HTML if provided (from auto-save)
-    if (data.html) {
-      htmlContent = data.html;
-    } else {
-      // Get tab to capture HTML from
-      let captureTabId: number | undefined;
-      if (data.tabId) {
-        captureTabId = data.tabId;
-      } else {
-        const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-        captureTabId = tabs[0]?.id;
-      }
-
-      if (captureTabId) {
-        // Request HTML capture from content script
-        const captureResponse = await browser.tabs.sendMessage(captureTabId, {
-          type: 'CAPTURE_PAGE_HTML',
-        });
-
-        if (captureResponse?.success && captureResponse.data) {
-          htmlContent = captureResponse.data as string;
+      // First check local storage for existing item key
+      const existingPage = await storage.getPagesForAURL(normalizedUrl);
+      if (existingPage?.zoteroItemKey) {
+        try {
+          item = await zoteroAPI.getItem(existingPage.zoteroItemKey);
+          // sleep for 100 ms
+          await new Promise(resolve => setTimeout(resolve, 100));
+          isExistingZoteroItem = true;
+          if (LOG_LEVEL > 0) console.log('Found existing item from local storage:', item.key);
+        } catch (error) {
+          console.error('Failed to fetch existing item from storage:', error);
+          // Item may have been deleted from Zotero, fall through to search/create
         }
       }
+
+      // Fall back to API search if not found locally
+      if (!item) {
+        item = await zoteroAPI.findItemByUrl(normalizedUrl);
+        // sleep for 100 ms
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (item) {
+          if (LOG_LEVEL > 0) console.log('Found existing item from API search:', item.key);
+          isExistingZoteroItem = true;
+        }
+      }
+
+      // Create new item if none found
+      if (!item) {
+        item = await zoteroAPI.createWebpageItem(
+          normalizedUrl,
+          data.title,
+          projects
+        );
+        // sleep for 100 ms
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (LOG_LEVEL > 0) console.log('Created new item:', item.key);
+
+      }
+
+      // Extract confirmed collections from API response
+      confirmedCollections.push(...(item.data.collections ?? []));
+      zoteroWebpageItems.push(item);
+    }
+    else if (project.backend === 'atlos') {
+      const source = await atlosAPI.createWebpageItem(
+        normalizedUrl, "", project);
+
+      // sleep for 100 ms
+      await new Promise(resolve => setTimeout(resolve, 100));
+      atlosSourceMaterial.push({ projectID: project.id, incidentSlug: source.slug });
     }
 
-    if (htmlContent) {
 
-      // Convert HTML string to Uint8Array
-      const encoder = new TextEncoder();
-      const htmlData = encoder.encode(htmlContent);
+    let snapshotSaved = false;
+    const zoteroAttachmentKeys = [];
+    const atlosSourceMaterialIncidentSlugs = [];
 
-      // Calculate MD5 hash
-      const hash = md5(htmlData);
+    // Try to capture and upload snapshot
+    try {
+      let htmlContent: string | null = null;
 
-      // Generate filename (matching Zotero's naming convention)
-      // Sanitize title: replace invalid chars, limit length
-      const sanitizedTitle = data.title
-        .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') // Replace invalid filename chars
-        .replace(/\s+/g, ' ') // Normalize whitespace
-        .trim()
-        .slice(0, 100); // Limit length
-      const filename = `${sanitizedTitle}.html`;
+      // Use pre-captured HTML if provided (from auto-save)
+      if (data.html) {
+        htmlContent = data.html;
+      } else {
+        // Get tab to capture HTML from
+        let captureTabId: number | undefined;
+        if (data.tabId) {
+          captureTabId = data.tabId;
+        } else {
+          const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+          captureTabId = tabs[0]?.id;
+        }
 
-      // Get existing snapshots to determine the next snapshot number
-      const existingSnapshots = await zoteroAPI.getSnapshots(item.key);
-      const snapshotNumber = existingSnapshots.length + 1;
-      const attachmentTitle = `Snapshot ${snapshotNumber}`;
+        if (captureTabId) {
+          // Request HTML capture from content script
+          const captureResponse = await browser.tabs.sendMessage(captureTabId, {
+            type: 'CAPTURE_PAGE_HTML',
+          });
 
-      // Create attachment item
-      // This adds to the existing item or the newly created one
-      const attachment = await zoteroAPI.createAttachmentItem(
-        item.key,
-        normalizedUrl,
-        attachmentTitle
-      );
+          if (captureResponse?.success && captureResponse.data) {
+            htmlContent = captureResponse.data as string;
+          }
+        }
+      }
 
-      // Upload the HTML content
-      await zoteroAPI.uploadAttachment(
-        attachment.key,
-        htmlData,
-        filename,
-        hash
-      );
+      if (htmlContent) {
+        // Convert HTML string to Uint8Array
+        const encoder = new TextEncoder();
+        const htmlData = encoder.encode(htmlContent);
 
-      snapshotSaved = true;
-      if (LOG_LEVEL > 0) console.log('Snapshot saved successfully:', filename, isExistingItem ? '(added to existing item)' : '(new item)');
+        // Calculate MD5 hash
+        const hash = md5(htmlData);
+
+        // Generate filename (matching Zotero's naming convention)
+        // Sanitize title: replace invalid chars, limit length
+        const sanitizedTitle = data.title
+          .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') // Replace invalid filename chars
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim()
+          .slice(0, 100); // Limit length
+        const filename = `${sanitizedTitle}.html`;
+
+        // Zotero:
+        for (const item of zoteroWebpageItems) {
+          // Get existing snapshots to determine the next snapshot number
+          const existingSnapshots = await zoteroAPI.getSnapshots(item.key);
+          let snapshotNumber = existingSnapshots.length + 1;
+          while (existingSnapshots.find(s => s.data.title === `Snapshot ${snapshotNumber}`)) {
+            snapshotNumber++;
+          }
+          const attachmentTitle = `Snapshot ${snapshotNumber}`;
+
+          // Create attachment item
+          // This adds to the existing item or the newly created one
+          const attachment = await zoteroAPI.createAttachmentItem(
+            item.key,
+            normalizedUrl,
+            attachmentTitle
+          );
+
+
+          // Upload the HTML content
+          await zoteroAPI.uploadAttachment(
+            attachment.key,
+            htmlData,
+            filename,
+            hash
+          );
+
+          snapshotSaved = true;
+          if (LOG_LEVEL > 0) console.log('Zotero Snapshot saved successfully:', filename);
+          zoteroAttachmentKeys.push({ key: attachment.key, version: item.version });
+        }
+        // Atlos:
+        for (const source of atlosSourceMaterial) {
+          // Upload the HTML content
+          await atlosAPI.createSourceMaterialArtifact(
+            source.incidentSlug,
+            htmlData,
+            filename,
+            data.title
+          );
+          atlosSourceMaterialIncidentSlugs.push({ slug: source.incidentSlug, projectID: source.projectID });
+        }
+      }
+    } catch (error) {
+      // Log error but don't fail the save operation
+      console.error('Failed to save snapshot:', error);
     }
-  } catch (error) {
-    // Log error but don't fail the save operation
-    console.error('Failed to save snapshot:', error);
+    for (const item of zoteroAttachmentKeys) {
+      await storage.savePage({
+        url: normalizedUrl,
+        backend: 'zotero',
+        key: item.key,
+        title: data.title,
+        projects: confirmedCollections,
+        dateAdded: new Date().toISOString(),
+        snapshot: snapshotSaved,
+        zoteroVersion: item.version,
+      });
+    }
+    for (const item of atlosSourceMaterialIncidentSlugs) {
+      await storage.savePage({
+        url: normalizedUrl,
+        key: item.slug + item.projectID,
+        backend: 'atlos',
+        altosIncidentSlug: item.slug,
+        altosSourceMaterialID: item.projectID,
+        title: data.title,
+        dateAdded: new Date().toISOString(),
+        snapshot: snapshotSaved,
+      });
+    }
+
+    return {
+      success: true,
+      data: { itemKey: item.zoteroItemKey, projects: confirmedCollections, snapshot: snapshotSaved },
+    };
   }
-
-  await storage.savePage({
-    url: normalizedUrl,
-    zoteroItemKey: item.key,
-    title: data.title,
-    projects: confirmedCollections,
-    dateAdded: new Date().toISOString(),
-    snapshot: snapshotSaved,
-    version: item.version,
-  });
-
-  return {
-    success: true,
-    data: { itemKey: item.key, projects: confirmedCollections, snapshot: snapshotSaved },
-  };
 }
 
 /**
@@ -420,7 +490,7 @@ async function handleCreateAnnotation(data: {
   const normalizedUrl = normalizeUrl(data.url);
 
   // Get the page to find the Zotero item key
-  const page = await storage.getPage(normalizedUrl);
+  const page = await storage.getPagesForAURL(normalizedUrl);
   if (!page) {
     return { success: false, error: 'Page not saved to Zotero yet' };
   }
@@ -687,7 +757,7 @@ async function handleDeleteAnnotation(data: {
 
   // Delete from Zotero if it has a note key
   if (annotation.zoteroNoteKey) {
-    const page = await storage.getPage(annotation.pageUrl);
+    const page = await storage.getPagesForAURL(annotation.pageUrl);
     if (page) {
       // We'd need the version to delete, so for now we'll just remove locally
       // await zoteroAPI.deleteItem(annotation.zoteroNoteKey, version);
@@ -1102,7 +1172,7 @@ async function handleExecuteAutoSave(
   pendingAutoSaveParents.delete(tabId);
 
   // Check if page is already saved (might have been saved manually during countdown)
-  const existingPage = await storage.getPage(normalizedUrl);
+  const existingPage = await storage.getPagesForAURL(normalizedUrl);
   if (existingPage) {
     if (LOG_LEVEL > 0) console.log(`Webtero: Page already saved, creating link record only`);
 
@@ -1149,7 +1219,7 @@ async function handleExecuteAutoSave(
 
   try {
     await savePromise;
-    const savedPage = await storage.getPage(normalizedUrl);
+    const savedPage = await storage.getPagesForAURL(normalizedUrl);
 
     if (savedPage) {
       // Create link record
@@ -1211,7 +1281,7 @@ async function handleLinkClicked(
   const targetUrl = normalizeUrl(data.targetUrl);
 
   // Check if target page is already saved - if so, just create link record
-  const existingPage = await storage.getPage(targetUrl);
+  const existingPage = await storage.getPagesForAURL(targetUrl);
   if (existingPage) {
     if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Target page already saved, creating link record`);
     // Create a link record for already-saved page
@@ -1363,7 +1433,7 @@ async function handleQueueAnnotation(data: {
   const normalizedUrl = normalizeUrl(data.url);
 
   // Case 3: Page already saved - create annotation directly on latest snapshot
-  const existingPage = await storage.getPage(normalizedUrl);
+  const existingPage = await storage.getPagesForAURL(normalizedUrl);
   if (existingPage) {
     return await handleCreateAnnotation({
       url: data.url,
@@ -1578,7 +1648,7 @@ async function handleRetryOutboxAnnotation(data: {
   const normalizedUrl = annotation.pageUrl;
 
   // Check if page is now saved
-  const existingPage = await storage.getPage(normalizedUrl);
+  const existingPage = await storage.getPagesForAURL(normalizedUrl);
   if (existingPage) {
     // Page is saved - just process the annotation
     await storage.updateOutboxAnnotationStatus(data.id, 'saving_annotation');

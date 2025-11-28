@@ -14,12 +14,15 @@ export interface WebteroProject {
 
 export interface SavedPage {
   url: string;
-  zoteroItemKey: string; // Item key in Zotero
+  backend: string; //zotero or atlos
+  key: string; // zotero key or altos slug+id
+  altosIncidentSlug?: string; // Atlos incident slug
+  altosSourceMaterialID?: string; // Atlos source material ID
   title: string;
-  projects: string[]; // Collection keys
+  projects?: string[]; // Collection keys
   dateAdded: string;
   snapshot: boolean; // Whether snapshot was saved
-  version: number; // Zotero version for sync
+  zoteroVersion?: number; // Zotero version for sync
 }
 
 export interface Annotation {
@@ -153,7 +156,7 @@ export const DEFAULT_SETTINGS: Settings = {
 export interface StorageData {
   authZotero?: AuthDataZotero;
   authAtlos?: AuthDataAtlos[];
-  pages: Record<string, SavedPage>;
+  pages: Record<string, SavedPage[]>;
   annotations: Record<string, Annotation>;
   projects: Record<string, WebteroProject>;
   projectsAtlos: Record<string, WebteroProject>;

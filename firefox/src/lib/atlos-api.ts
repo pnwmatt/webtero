@@ -77,42 +77,34 @@ class AtlosAPI {
   async createWebpageItem(
     url: string,
     title: string,
-    collections?: string[]
+    project: WebteroProject
   ): Promise<any> {
-    if (!collections || collections.length === 0) {
-      throw new Error('No collections specified');
+
+    let slug = project.id;
+
+    if (project.parentId === undefined) {
+    // Check if collection starts with "webteroatlos:"
+      // Create a new incident
+      const result = await this.createAtlosIncident(
+        project.id,
+        title,
+        ['Not Sensitive'],
+        url
+      );
+
+      slug = result.slug;
     }
+    // Create source material for existing incident
+    const result = await this.createAtlosSourceMaterial(
+      slug, //slug
+      title,
+      url
+    );
 
-    // Loop through collections and handle based on backend
-    const results = [];
-    for (const collection of collections) {
-      const project = await storage.getProject(collection);
+    return result;
 
-      if (project && project.backend === 'atlos') {
-        // Check if collection starts with "webteroatlos:"
-        if (collection.startsWith('webteroatlos:')) {
-          // Create a new incident
-          const result = await this.createAtlosIncident(
-            collection.replace('webteroatlos:', ''),
-            title,
-            ['Not Sensitive'],
-            url
-          );
-          results.push(result);
-        } else {
-          // Create source material for existing incident
-          const result = await this.createAtlosSourceMaterial(
-            collection,
-            title,
-            url
-          );
-          results.push(result);
-        }
-      }
-    }
-
-    return results.length > 0 ? results[0] : null;
   }
+
 
   /* Create an Atlos Incident
    * POST /api/v2/incidents/new creates a new incident. It has two required parameters:
@@ -224,12 +216,32 @@ class AtlosAPI {
 
   async createSourceMaterialArtifact(
     sourceMaterialId: string,
-    singlePageData: string
+    singlePageData: Uint8Array<ArrayBuffer>,
+    filename: string,
+    title?: string
   ): Promise<boolean> {
     const headers = await this.getHeaders();
+    delete (headers as any)['Content-Type']; // Remove Content-Type as it will be set by browser for multipart/form-data
+
+    const formData = new FormData();
+    const blob = new Blob([singlePageData], { type: 'application/octet-stream' });
+    formData.append('file', blob, filename);
+
+    if (title) {
+      formData.append('title', title);
+    }
+
+    const response = await fetch(`${API_BASE}source_material/upload/${sourceMaterialId}`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to upload artifact: ${response.statusText}`);
+    }
 
     return true;
-
   }
 
   /**
