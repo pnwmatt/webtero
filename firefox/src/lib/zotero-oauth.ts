@@ -209,7 +209,7 @@ export async function onAuthorizationComplete(queryString: string): Promise<void
     }
 
     // Step 6: Store credentials
-    await storage.setAuth({
+    await storage.setAuthZotero({
       apiKey,
       userID,
       username,
@@ -235,7 +235,7 @@ export async function onAuthorizationComplete(queryString: string): Promise<void
  * Check if user is authenticated
  */
 export async function isAuthenticated(): Promise<boolean> {
-  const auth = await storage.getAuth();
+  const auth = await storage.getAuthZotero();
   return !!(auth?.apiKey && auth?.userID);
 }
 
@@ -243,7 +243,7 @@ export async function isAuthenticated(): Promise<boolean> {
  * Get current user info if authenticated
  */
 export async function getUserInfo(): Promise<{ userID: string; username?: string } | null> {
-  const auth = await storage.getAuth();
+  const auth = await storage.getAuthZotero();
   if (!auth?.apiKey || !auth?.userID) {
     return null;
   }

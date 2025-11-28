@@ -34,11 +34,11 @@ class Storage {
   }
 
   // Auth operations
-  async getAuth(): Promise<AuthDataZotero | undefined> {
+  async getAuthZotero(): Promise<AuthDataZotero | undefined> {
     return this.get('authZotero');
   }
 
-  async setAuth(auth: AuthDataZotero): Promise<void> {
+  async setAuthZotero(auth: AuthDataZotero): Promise<void> {
     await this.set('authZotero', auth);
   }
 

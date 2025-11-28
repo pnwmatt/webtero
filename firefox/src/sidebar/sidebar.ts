@@ -8,6 +8,8 @@ const LOG_LEVEL = 0;
 
 // Cached settings (loaded on init)
 let cachedSettings: Settings = DEFAULT_SETTINGS;
+let usingZotero = false;
+let usingAtlos = false;
 
 // DOM elements - Sign-in overlay
 const signInOverlay = document.getElementById('signInOverlay') as HTMLDivElement;
@@ -67,7 +69,7 @@ let autoSaveCountdownSeconds: number = 0;
  */
 async function sendMessageToContentScript<T>(
   tabId: number,
-  message: { type: string; [key: string]: unknown },
+  message: { type: string;[key: string]: unknown },
   maxRetries = 3,
   initialDelayMs = 100
 ): Promise<T | null> {
@@ -819,7 +821,7 @@ function displayVersionsList() {
 // Open a snapshot in Zotero Web Library Reader
 async function openSnapshotInReader(itemKey: string, snapshotKey: string) {
   try {
-    const auth = await storage.getAuth();
+    const auth = await storage.getAuthZotero();
     if (!auth?.userID) {
       alert('Please configure your Zotero API key in settings');
       return;
@@ -1933,17 +1935,19 @@ async function checkAuthAndInitialize(): Promise<void> {
   // Load settings first
   cachedSettings = await storage.getSettings();
 
-  // If OAuth is enabled, check if user is authenticated
-  if (config.features.oauthEnabled) {
-    const auth = await storage.getAuth();
-    const isAuthenticated = !!(auth?.apiKey && auth?.userID);
 
-    if (!isAuthenticated) {
-      // Show sign-in overlay, hide main sidebar
-      signInOverlay.style.display = 'flex';
-      mainSidebar.style.display = 'none';
-      return;
-    }
+  // If OAuth is enabled, check if user is authenticated
+  const authZotero = await storage.getAuthZotero();
+  usingZotero = !!(authZotero?.apiKey && authZotero?.userID);
+
+  const authAtlos = await storage.getAllAuthAtlos();
+  usingAtlos = authAtlos.length > 0;
+
+  if (!usingZotero && !usingAtlos) {
+    // Show sign-in overlay, hide main sidebar
+    signInOverlay.style.display = 'flex';
+    mainSidebar.style.display = 'none';
+    return;
   }
 
   // User is authenticated (or OAuth is disabled) - show main sidebar
@@ -2077,6 +2081,13 @@ projectDropdown.addEventListener('change', () => {
   if (projectTabContent.classList.contains('active')) {
     loadWebHistory();
   }
+
+  // send the backend the selected projects
+  const selectedProjects = projectDropdown.value ? [projectDropdown.value] : [];
+  browser.runtime.sendMessage({
+    type: 'SET_SIDEBAR_SELECTED_PROJECTS',
+    data: { projects: selectedProjects },
+  });
 });
 
 // ============================================

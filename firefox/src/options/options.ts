@@ -32,7 +32,7 @@ const syncProjectsAtlosBtn = document.getElementById('syncProjectsAtlosBtn') as 
 
 // Load existing credentials
 async function loadCredentials() {
-  const auth = await storage.getAuth();
+  const auth = await storage.getAuthZotero();
   if (auth) {
     usernameInput.value = auth.username || '';
     apiKeyInput.value = maskKey(auth.apiKey);
@@ -326,7 +326,7 @@ form.addEventListener('submit', async (e) => {
   }
 
   try {
-    await storage.setAuth({ apiKey, userID });
+    await storage.setAuthZotero({ apiKey, userID });
     showStatus('Credentials saved successfully!');
 
     apiKeyInput.value = maskKey(apiKey);

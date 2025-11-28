@@ -10,7 +10,7 @@ const API_VERSION = '3';
  */
 class ZoteroAPI {
   private async getHeaders(): Promise<HeadersInit> {
-    const auth = await storage.getAuth();
+    const auth = await storage.getAuthZotero();
     return {
       'Zotero-API-Version': API_VERSION,
       'Content-Type': 'application/json',
@@ -19,7 +19,7 @@ class ZoteroAPI {
   }
 
   private async getUserID(): Promise<string> {
-    const auth = await storage.getAuth();
+    const auth = await storage.getAuthZotero();
     return auth?.userID ?? '13[...]'; // Placeholder userID
   }
 
@@ -401,7 +401,7 @@ class ZoteroAPI {
     md5: string
   ): Promise<void> {
     const userID = await this.getUserID();
-    const auth = await storage.getAuth();
+    const auth = await storage.getAuthZotero();
     if (!auth?.apiKey) {
       throw new Error('No API key available');
     }

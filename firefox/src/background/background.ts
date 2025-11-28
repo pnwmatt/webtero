@@ -1,4 +1,4 @@
-import type { Message, MessageResponse, OutboxAnnotation, HighlightColor } from '../lib/types';
+import type { Message, MessageResponse, OutboxAnnotation, HighlightColor, PendingAutosaveByUrl } from '../lib/types';
 import { storage } from '../lib/storage';
 import { zoteroAPI } from '../lib/zotero-api';
 import { atlosAPI } from '../lib/atlos-api';
@@ -8,13 +8,15 @@ import * as zoteroOAuth from '../lib/zotero-oauth';
 
 const LOG_LEVEL = 0;
 
+let selectedProjects: string[] = [];
+
 // Track pages currently being saved (URL -> Promise that resolves when save completes)
 // This prevents multiple saves when annotations are queued rapidly
 const savesInProgress = new Map<string, Promise<void>>();
 
 // Track pending auto-save by target URL (set when link is clicked)
 // When onUpdated fires with a matching URL, we transfer to pendingAutoSaveParents by tabId
-let pendingAutoSaveByUrl: Object | null = null; // { sourceItemKey: string; sourceUrl: string; expires: number };
+let pendingAutoSaveByUrl: PendingAutosaveByUrl | null = null; // { sourceItemKey: string; sourceUrl: string; expires: number };
 
 // Track pending auto-save by tabId (set when tab loads a URL from pendingAutoSaveByUrl)
 // Content script checks this on init to know if it should start auto-save countdown
@@ -44,17 +46,6 @@ browser.runtime.onMessage.addListener(
         case 'SAVE_PAGE':
           return await handleSavePage(
             message.data as { url: string; title: string; projects?: string[] }
-          );
-
-        case 'CREATE_ANNOTATION':
-          return await handleCreateAnnotation(
-            message.data as {
-              url: string;
-              text: string;
-              comment?: string;
-              color: string;
-              position: { xpath: string; offset: number; length: number };
-            }
           );
 
         case 'GET_ANNOTATIONS':
@@ -155,6 +146,12 @@ browser.runtime.onMessage.addListener(
         case 'GET_SAVED_URLS':
           return await handleGetSavedUrls();
 
+        case 'SET_SIDEBAR_SELECTED_PROJECTS':
+          return await handleSetProjects(
+            message.data as { projects: string[] }
+          );
+
+
         // Annotation outbox handlers
         case 'QUEUE_ANNOTATION':
           return await handleQueueAnnotation(
@@ -165,7 +162,6 @@ browser.runtime.onMessage.addListener(
               comment?: string;
               color: string;
               position: { xpath: string; offset: number; length: number };
-              collections?: string[];
             }
           );
 
@@ -236,18 +232,27 @@ async function handleGetPageData(data: {
     dateAdded: string;
     url: string;
   }> = [];
-
-  if (page?.backend == 'zotero' && page?.key) {
-    try {
-      const zoteroSnapshots = await zoteroAPI.getSnapshots(page.key);
-      snapshots = zoteroSnapshots.map((s) => ({
-        key: s.key,
-        title: s.data.title || 'Snapshot',
-        dateAdded: s.data.dateAdded ? String(s.data.dateAdded) : '',
-        url: s.data.url || normalizedUrl,
+  for (const p of page ?? []) {
+    if (p?.backend == 'zotero' && p?.key) {
+      try {
+        const zoteroSnapshots = await zoteroAPI.getSnapshots(p.key);
+        snapshots = zoteroSnapshots.map((s) => ({
+          key: s.key,
+          title: s.data.title || 'Snapshot',
+          dateAdded: s.data.dateAdded ? String(s.data.dateAdded) : '',
+          url: s.data.url || normalizedUrl,
+        }));
+      } catch (error) {
+        console.error('Failed to fetch snapshots:', error);
+      }
+    } else if (p?.backend == 'atlos' && p?.altosIncidentSlug) {
+      const incidentComments = await atlosAPI.getComments(p.altosIncidentSlug);
+      snapshots = incidentComments.map((c) => ({
+        key: c.key,
+        title: c.title || 'Comment',
+        dateAdded: c.dateAdded ? String(c.dateAdded) : '',
+        url: normalizedUrl,
       }));
-    } catch (error) {
-      console.error('Failed to fetch snapshots:', error);
     }
   }
 
@@ -273,21 +278,23 @@ async function handleSavePage(data: {
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
   const projects = data.projects;
+  const existingPages = await storage.getPagesForAURL(normalizedUrl);
+
+  const confirmedCollections = [];
+
+  let snapshotSaved = false;
 
   const zoteroWebpageItems = [];
-  const atlosIncidentSums = [];
   const atlosSourceMaterial = [];
 
   // for each projects
 
   for (const pName of projects ?? []) {
     const project = await storage.getProject(pName);
-    const confirmedCollections = [];
-    let isExistingZoteroItem = false;
     if (!project) {
-      return { success: false, error: `Project not found: ${pName}` };
       handleSyncZoteroProjects();
       handleSyncAtlosProjects();
+      return { success: false, error: `Project not found: ${pName}` };
     }
     if (project.backend === 'zotero') {
 
@@ -296,17 +303,19 @@ async function handleSavePage(data: {
 
 
       // First check local storage for existing item key
-      const existingPage = await storage.getPagesForAURL(normalizedUrl);
-      if (existingPage?.zoteroItemKey) {
-        try {
-          item = await zoteroAPI.getItem(existingPage.zoteroItemKey);
-          // sleep for 100 ms
-          await new Promise(resolve => setTimeout(resolve, 100));
-          isExistingZoteroItem = true;
-          if (LOG_LEVEL > 0) console.log('Found existing item from local storage:', item.key);
-        } catch (error) {
-          console.error('Failed to fetch existing item from storage:', error);
+
+      for (const existingPage of existingPages ?? []) {
+        if (existingPage?.key && existingPage.backend === 'zotero') {
+          try {
+            item = await zoteroAPI.getItem(existingPage.key);
+            // sleep for 100 ms
+            await new Promise(resolve => setTimeout(resolve, 100));
+            if (LOG_LEVEL > 0) console.log('Found existing item from local storage:', item.key);
+            break;
+          } catch (error) {
+            console.error('Failed to fetch existing item from storage:', error);
           // Item may have been deleted from Zotero, fall through to search/create
+          }
         }
       }
 
@@ -317,7 +326,6 @@ async function handleSavePage(data: {
         await new Promise(resolve => setTimeout(resolve, 100));
         if (item) {
           if (LOG_LEVEL > 0) console.log('Found existing item from API search:', item.key);
-          isExistingZoteroItem = true;
         }
       }
 
@@ -348,7 +356,6 @@ async function handleSavePage(data: {
     }
 
 
-    let snapshotSaved = false;
     const zoteroAttachmentKeys = [];
     const atlosSourceMaterialIncidentSlugs = [];
 
@@ -469,12 +476,11 @@ async function handleSavePage(data: {
         snapshot: snapshotSaved,
       });
     }
-
-    return {
-      success: true,
-      data: { itemKey: item.zoteroItemKey, projects: confirmedCollections, snapshot: snapshotSaved },
-    };
   }
+  return {
+    success: true,
+    data: { projects: confirmedCollections, snapshot: snapshotSaved },
+  };
 }
 
 /**
@@ -486,19 +492,27 @@ async function handleCreateAnnotation(data: {
   comment?: string;
   color: string;
   position: { xpath: string; offset: number; length: number; cssSelector?: string; selectorStart?: number; selectorEnd?: number };
+  projects?: string[];
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
 
+
+
   // Get the page to find the Zotero item key
-  const page = await storage.getPagesForAURL(normalizedUrl);
-  if (!page) {
+  const pages = await storage.getPagesForAURL(normalizedUrl);
+  if (!pages || pages.length === 0) {
     return { success: false, error: 'Page not saved to Zotero yet' };
   }
+
+  // get the most recent backend=zotero from pages
+  const page = pages.filter(p => p.backend === 'zotero').sort((a, b) => {
+    return new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime();
+  })[0];
 
   // Get the most recent snapshot to associate the annotation with locally
   let snapshotKey: string | undefined;
   try {
-    const snapshots = await zoteroAPI.getSnapshots(page.zoteroItemKey);
+    const snapshots = await zoteroAPI.getSnapshots(page.key);
     if (snapshots.length > 0) {
       // Use the most recent snapshot
       snapshotKey = snapshots[0].key;
@@ -524,7 +538,7 @@ async function handleCreateAnnotation(data: {
   const annotation = {
     id: generateId(),
     pageUrl: normalizedUrl,
-    zoteroItemKey: page.zoteroItemKey,
+    zoteroItemKey: page.key,
     zoteroNoteKey: zoteroAnnotation.key,
     snapshotKey,
     text: data.text,
@@ -1172,9 +1186,14 @@ async function handleExecuteAutoSave(
   pendingAutoSaveParents.delete(tabId);
 
   // Check if page is already saved (might have been saved manually during countdown)
-  const existingPage = await storage.getPagesForAURL(normalizedUrl);
-  if (existingPage) {
+  const existingPages = await storage.getPagesForAURL(normalizedUrl);
+  if (existingPages) {
     if (LOG_LEVEL > 0) console.log(`Webtero: Page already saved, creating link record only`);
+
+    const existingPage = existingPages.find(p => p.backend === 'zotero');
+    if (!existingPage) {
+      return { success: false, error: 'Existing saved page not found in Zotero' };
+    }
 
     // Get the source item key from the auto-save tab info
     const autoSaveTab = await storage.getAutoSaveTab(tabId);
@@ -1182,14 +1201,14 @@ async function handleExecuteAutoSave(
       const link = {
         id: generateId(),
         sourceItemKey: autoSaveTab.sourceItemKey,
-        targetItemKey: existingPage.zoteroItemKey,
+        targetItemKey: existingPage.key,
         targetUrl: normalizedUrl,
         created: new Date().toISOString(),
       };
       await storage.savePageLink(link);
     }
 
-    return { success: true, data: { alreadySaved: true, itemKey: existingPage.zoteroItemKey } };
+    return { success: true, data: { alreadySaved: true, itemKey: existingPage.key } };
   }
 
   // Get the auto-save tab info for link creation
@@ -1206,7 +1225,7 @@ async function handleExecuteAutoSave(
     saveResult = await handleSavePage({
       url: normalizedUrl,
       title: data.title,
-      collections: [],
+      projects: selectedProjects,
       tabId: tabId,
       html: data.html, // Pass pre-captured HTML from content script
     });
@@ -1219,14 +1238,19 @@ async function handleExecuteAutoSave(
 
   try {
     await savePromise;
-    const savedPage = await storage.getPagesForAURL(normalizedUrl);
+    const savedPages = await storage.getPagesForAURL(normalizedUrl);
 
-    if (savedPage) {
+
+    if (savedPages) {
+      const savedPage = savedPages.find(p => p.backend === 'zotero');
+      if (!savedPage) {
+        throw new Error('Saved page not found in Zotero after save');
+      }
       // Create link record
       const link = {
         id: generateId(),
         sourceItemKey: autoSaveTab.sourceItemKey,
-        targetItemKey: savedPage.zoteroItemKey,
+        targetItemKey: savedPage.key,
         targetUrl: normalizedUrl,
         created: new Date().toISOString(),
       };
@@ -1281,14 +1305,21 @@ async function handleLinkClicked(
   const targetUrl = normalizeUrl(data.targetUrl);
 
   // Check if target page is already saved - if so, just create link record
-  const existingPage = await storage.getPagesForAURL(targetUrl);
-  if (existingPage) {
+  const existingPages = await storage.getPagesForAURL(targetUrl);
+
+  if (existingPages) {
     if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Target page already saved, creating link record`);
+
+    const existingPage = existingPages.find(p => p.backend === 'zotero');
+    if (!existingPage) {
+      if (LOG_LEVEL > 0) console.log(`[webtero bg] handleLinkClicked: Existing saved page not found in Zotero`);
+      return { success: false, error: 'Existing saved page not found in Zotero' };
+    }
     // Create a link record for already-saved page
     const link = {
       id: generateId(),
       sourceItemKey: sourceItemKey,
-      targetItemKey: existingPage.zoteroItemKey,
+      targetItemKey: existingPage.key,
       targetUrl: targetUrl,
       created: new Date().toISOString(),
     };
@@ -1349,12 +1380,12 @@ async function handleGetPageLinks(data: {
     // Get source URL from saved page
     const pages = await storage.getAllPages();
     const sourcePage = Object.values(pages).find(
-      (p) => p.zoteroItemKey === link.sourceItemKey
+      (p) => p[0].key === link.sourceItemKey
     );
     if (sourcePage) {
       linkedPages.push({
         itemKey: link.sourceItemKey,
-        url: sourcePage.url,
+        url: sourcePage[0].url,
         direction: 'incoming',
         readPercentage: percentage,
       });
@@ -1381,18 +1412,18 @@ async function handleGetSavedUrls(): Promise<MessageResponse> {
 
   for (const page of Object.values(pages)) {
     const percentage = settings.readingProgressEnabled
-      ? await storage.getReadPercentage(page.zoteroItemKey)
+      ? await storage.getReadPercentage(page[0].url)
       : 0;
 
     // Get annotation colors for this page
     const pageAnnotations = Object.values(allAnnotations).filter(
-      (ann) => ann.pageUrl === page.url
+      (ann) => ann.pageUrl === page[0].url
     );
     const annotationColors = pageAnnotations.map((ann) => ann.color);
 
     savedUrls.push({
-      url: page.url,
-      itemKey: page.zoteroItemKey,
+      url: page[0].url,
+      itemKey: page[0].key,
       readPercentage: percentage,
       annotationColors,
     });
@@ -1409,6 +1440,23 @@ async function handleGetSavedUrls(): Promise<MessageResponse> {
 browser.tabs.onRemoved.addListener(async (tabId) => {
   await storage.deleteAutoSaveTab(tabId);
 });
+
+// ============================================
+// Set projects
+// ============================================
+async function handleSetProjects(data: {
+  projects: string[];
+}): Promise<MessageResponse> {
+  const projectRecords = await storage.getAllProjects();
+  const validProjects = data.projects.filter(projId => projId in projectRecords);
+
+  selectedProjects = validProjects;
+
+  return {
+    success: true,
+  };
+}
+
 
 // ============================================
 // Annotation Outbox Handlers
@@ -1428,13 +1476,12 @@ async function handleQueueAnnotation(data: {
   comment?: string;
   color: string;
   position: { xpath: string; offset: number; length: number; cssSelector?: string; selectorStart?: number; selectorEnd?: number };
-  collections?: string[];
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
 
   // Case 3: Page already saved - create annotation directly on latest snapshot
-  const existingPage = await storage.getPagesForAURL(normalizedUrl);
-  if (existingPage) {
+  const existingPages = await storage.getPagesForAURL(normalizedUrl);
+  if (existingPages && existingPages.length > 0) {
     return await handleCreateAnnotation({
       url: data.url,
       text: data.text,
@@ -1480,7 +1527,7 @@ async function handleQueueAnnotation(data: {
   }
 
   // Case 2: No save in progress - start one and track it
-  const savePromise = startPageSaveAndProcessAnnotations(normalizedUrl, data.title, data.collections);
+  const savePromise = startPageSaveAndProcessAnnotations(normalizedUrl, data.title);
   savesInProgress.set(normalizedUrl, savePromise);
 
   // Clean up the tracking when done
@@ -1501,14 +1548,13 @@ async function handleQueueAnnotation(data: {
 async function startPageSaveAndProcessAnnotations(
   normalizedUrl: string,
   pageTitle: string,
-  collections?: string[]
 ): Promise<void> {
   try {
     // Save the page first
     const saveResult = await handleSavePage({
       url: normalizedUrl,
       title: pageTitle,
-      collections,
+      projects: selectedProjects,
     });
 
     if (!saveResult.success) {
@@ -1672,7 +1718,7 @@ async function handleRetryOutboxAnnotation(data: {
   }
 
   // Start a new save
-  const savePromise = startPageSaveAndProcessAnnotations(normalizedUrl, data.title, data.collections);
+  const savePromise = startPageSaveAndProcessAnnotations(normalizedUrl, data.title);
   savesInProgress.set(normalizedUrl, savePromise);
   savePromise.finally(() => {
     savesInProgress.delete(normalizedUrl);

@@ -12,6 +12,12 @@ export interface WebteroProject {
   dateModified?: string; // Last modified date for sorting
 }
 
+export interface PendingAutosaveByUrl {
+  sourceItemKey: string;
+  sourceUrl: string;
+  expires: number;
+}
+
 export interface SavedPage {
   url: string;
   backend: string; //zotero or atlos
@@ -305,6 +311,8 @@ export type MessageType =
   | 'GET_OUTBOX_ANNOTATIONS'
   | 'RETRY_OUTBOX_ANNOTATION'
   | 'DELETE_OUTBOX_ANNOTATION'
+  // Set sidebar -> background to set projects
+  | 'SET_SIDEBAR_SELECTED_PROJECTS'
   // Save status
   | 'CHECK_SAVE_IN_PROGRESS'
   | 'CHECK_AUTO_SAVE_COUNTDOWN'
