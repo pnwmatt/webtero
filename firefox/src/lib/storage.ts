@@ -52,8 +52,10 @@ class Storage {
   }
 
   async addAuthAtlos(auth: AuthDataAtlos): Promise<void> {
-    const existing = await this.getAllAuthAtlos();
+    let existing = await this.getAllAuthAtlos();
     // Check if this project name already exists
+
+    console.log(typeof existing);
     const index = existing.findIndex(a => a.projectName === auth.projectName);
     if (index >= 0) {
       // Update existing entry
@@ -157,7 +159,11 @@ class Storage {
   }
 
   async saveProjects(projectsData: Record<string, WebteroProject>): Promise<void> {
-    await this.set('projects', projectsData);
+    // sort by last modified desc
+    const sortedProjects = Object.fromEntries(
+      Object.entries(projectsData).sort(([, a], [, b]) => b.dateModified - a.dateModified)
+    );
+    await this.set('projects', sortedProjects);
   }
 
   async deleteProject(id: string): Promise<void> {
@@ -168,41 +174,14 @@ class Storage {
     }
   }
 
-  // Atlos Project operations
-  async getProjectAtlos(id: string): Promise<WebteroProject | undefined> {
-    const projects = await this.get('projectsAtlos');
-    return projects?.[id];
-  }
-
-  async getAllProjectsAtlos(): Promise<Record<string, WebteroProject>> {
-    return (await this.get('projectsAtlos')) ?? {};
-  }
-
-  async saveProjectAtlos(project: WebteroProject): Promise<void> {
-    const projects = (await this.get('projectsAtlos')) ?? {};
-    projects[project.id] = project;
-    await this.set('projectsAtlos', projects);
-  }
-
-  async saveProjectsAtlos(projectsData: Record<string, WebteroProject>): Promise<void> {
-    await this.set('projectsAtlos', projectsData);
-  }
-
-  async deleteProjectAtlos(id: string): Promise<void> {
-    const projects = await this.get('projectsAtlos');
-    if (projects && projects[id]) {
-      delete projects[id];
-      await this.set('projectsAtlos', projects);
-    }
-  }
 
   // Sync operations
-  async getLastSync(): Promise<string | undefined> {
-    return this.get('lastSync');
+  async getLastSyncZotero(): Promise<string | undefined> {
+    return this.get('lastSyncZotero');
   }
 
-  async setLastSync(timestamp: string): Promise<void> {
-    await this.set('lastSync', timestamp);
+  async setLastSyncZotero(timestamp: string): Promise<void> {
+    await this.set('lastSyncZotero', timestamp);
   }
 
   async getLastSyncAtlos(): Promise<string | undefined> {

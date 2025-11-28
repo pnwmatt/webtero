@@ -3,7 +3,8 @@
 export type HighlightColor = 'yellow' | 'red' | 'green' | 'blue' | 'purple' | 'magenta' | 'orange' | 'gray';
 
 export interface WebteroProject {
-  id: string; // Zotero collection key
+  backend: 'zotero' | 'atlos';
+  id: string; // Collection key
   name: string; // Collection name
   parentId?: string; // Parent collection (for subcollections)
   itemCount: number; // Number of items
@@ -156,7 +157,7 @@ export interface StorageData {
   annotations: Record<string, Annotation>;
   projects: Record<string, WebteroProject>;
   projectsAtlos: Record<string, WebteroProject>;
-  lastSync?: string;
+  lastSyncZotero?: string;
   lastSyncAtlos?: string;
   // Page focus tracking (keyed by session ID)
   pageFocusSessions: Record<string, PageFocusSession>;
@@ -318,5 +319,6 @@ export interface MessageResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  count?: number;
   settings?: Partial<Settings>;
 }

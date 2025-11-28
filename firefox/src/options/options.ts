@@ -160,6 +160,11 @@ async function handleProjectNameEdit(input: HTMLInputElement) {
       (keyInput as HTMLInputElement).dataset.projectName = newName;
     }
   });
+  setTimeout(async () => {
+    await browser.runtime.sendMessage({
+      type: 'PROJECTS_UPDATED',
+    });
+  }, 500);
 
   showStatusAtlos(`Project renamed from "${oldName}" to "${newName}".`);
 }
@@ -197,6 +202,9 @@ async function handleApiKeyEdit(input: HTMLInputElement) {
   input.value = maskKey(newKey);
 
   showStatusAtlos(`API key updated for "${projectName}".`);
+  await browser.runtime.sendMessage({
+    type: 'PROJECTS_UPDATED',
+  });
 }
 
 // Handle remove Atlos project
@@ -209,6 +217,9 @@ async function handleRemoveAtlos(projectName: string) {
     await storage.removeAuthAtlos(projectName);
     await loadAtlosCredentialsTable();
     showStatusAtlos(`Removed credentials for "${projectName}".`);
+    await browser.runtime.sendMessage({
+      type: 'PROJECTS_UPDATED',
+    });
   } catch (error) {
     showStatusAtlos(`Failed to remove credentials for "${projectName}".`, true);
     console.error(error);
@@ -381,12 +392,12 @@ syncProjectsBtn.addEventListener('click', async () => {
 
   try {
     const response = await browser.runtime.sendMessage({
-      type: 'SYNC_PROJECTS',
+      type: 'SYNC_PROJECTS_ZOTERO',
     });
 
     if (response.success) {
       const count = response.data ? Object.keys(response.data).length : 0;
-      showSyncStatus(`Synced ${count} project${count === 1 ? '' : 's'} successfully!`, 'success');
+      showSyncStatus(`Synced ${count} incidents${count === 1 ? '' : 's'} successfully!`, 'success');
       await browser.runtime.sendMessage({
         type: 'PROJECTS_UPDATED',
       });
@@ -412,8 +423,8 @@ syncProjectsAtlosBtn.addEventListener('click', async () => {
     });
 
     if (response.success) {
-      const count = response.data ? Object.keys(response.data).length : 0;
-      showSyncStatusAtlos(`Synced ${count} Atlos project${count === 1 ? '' : 's'} successfully!`, 'success');
+      const count = 2;
+      showSyncStatusAtlos(`Synced Atlos project${count === 1 ? '' : 's'} successfully!`, 'success');
       await browser.runtime.sendMessage({
         type: 'PROJECTS_UPDATED',
       });

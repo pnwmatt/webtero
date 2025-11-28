@@ -925,7 +925,7 @@ async function loadProjectsForDropdown() {
   for (const p of sortedProjects) {
     const option = document.createElement('option');
     option.value = p.id;
-    option.textContent = (p.parentId ? '\u00A0\u00A0' : '') + p.name;
+    option.textContent = (p.parentId ? '\u00A0\u00A0' : '') + p.name + p.backend;
     projectDropdown.appendChild(option);
   }
 
@@ -1538,35 +1538,6 @@ newProject.addEventListener('click', async () => {
 cancelProject.addEventListener('click', () => {
   newProjectModal.style.display = 'none';
   newProjectForm.reset();
-});
-
-// Create new project
-newProjectForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  const name = projectName.value.trim();
-  const parent = parentProject.value || undefined;
-
-  if (!name) return;
-
-  try {
-    // Send to background to create via API
-    const response = await browser.runtime.sendMessage({
-      type: 'CREATE_COLLECTION',
-      data: { name, parentId: parent },
-    });
-
-    if (response.success) {
-      newProjectModal.style.display = 'none';
-      newProjectForm.reset();
-      await syncProjects.click();
-    } else {
-      alert(`Failed to create project: ${response.error}`);
-    }
-  } catch (error) {
-    console.error('Failed to create project:', error);
-    alert('Failed to create project');
-  }
 });
 
 // Settings button

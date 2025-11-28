@@ -1,6 +1,7 @@
 import type { Message, MessageResponse, OutboxAnnotation, HighlightColor } from '../lib/types';
 import { storage } from '../lib/storage';
 import { zoteroAPI } from '../lib/zotero-api';
+import { atlosAPI } from '../lib/atlos-api';
 import { generateId, normalizeUrl, md5 } from '../lib/utils';
 import { config } from '../lib/config';
 import * as zoteroOAuth from '../lib/zotero-oauth';
@@ -345,45 +346,45 @@ async function handleSavePage(data: {
 
     if (htmlContent) {
 
-        // Convert HTML string to Uint8Array
-        const encoder = new TextEncoder();
-        const htmlData = encoder.encode(htmlContent);
+      // Convert HTML string to Uint8Array
+      const encoder = new TextEncoder();
+      const htmlData = encoder.encode(htmlContent);
 
-        // Calculate MD5 hash
-        const hash = md5(htmlData);
+      // Calculate MD5 hash
+      const hash = md5(htmlData);
 
-        // Generate filename (matching Zotero's naming convention)
-        // Sanitize title: replace invalid chars, limit length
-        const sanitizedTitle = data.title
-          .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') // Replace invalid filename chars
-          .replace(/\s+/g, ' ') // Normalize whitespace
-          .trim()
-          .slice(0, 100); // Limit length
-        const filename = `${sanitizedTitle}.html`;
+      // Generate filename (matching Zotero's naming convention)
+      // Sanitize title: replace invalid chars, limit length
+      const sanitizedTitle = data.title
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') // Replace invalid filename chars
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .trim()
+        .slice(0, 100); // Limit length
+      const filename = `${sanitizedTitle}.html`;
 
-        // Get existing snapshots to determine the next snapshot number
-        const existingSnapshots = await zoteroAPI.getSnapshots(item.key);
-        const snapshotNumber = existingSnapshots.length + 1;
-        const attachmentTitle = `Snapshot ${snapshotNumber}`;
+      // Get existing snapshots to determine the next snapshot number
+      const existingSnapshots = await zoteroAPI.getSnapshots(item.key);
+      const snapshotNumber = existingSnapshots.length + 1;
+      const attachmentTitle = `Snapshot ${snapshotNumber}`;
 
-        // Create attachment item
-        // This adds to the existing item or the newly created one
-        const attachment = await zoteroAPI.createAttachmentItem(
-          item.key,
-          normalizedUrl,
-          attachmentTitle
-        );
+      // Create attachment item
+      // This adds to the existing item or the newly created one
+      const attachment = await zoteroAPI.createAttachmentItem(
+        item.key,
+        normalizedUrl,
+        attachmentTitle
+      );
 
-        // Upload the HTML content
-        await zoteroAPI.uploadAttachment(
-          attachment.key,
-          htmlData,
-          filename,
-          hash
-        );
+      // Upload the HTML content
+      await zoteroAPI.uploadAttachment(
+        attachment.key,
+        htmlData,
+        filename,
+        hash
+      );
 
-        snapshotSaved = true;
-        if (LOG_LEVEL > 0) console.log('Snapshot saved successfully:', filename, isExistingItem ? '(added to existing item)' : '(new item)');
+      snapshotSaved = true;
+      if (LOG_LEVEL > 0) console.log('Snapshot saved successfully:', filename, isExistingItem ? '(added to existing item)' : '(new item)');
     }
   } catch (error) {
     // Log error but don't fail the save operation
@@ -537,23 +538,36 @@ async function handleGetAnnotations(data: {
 ]
  */
 async function handleSyncZoteroProjects(): Promise<MessageResponse> {
+  // Get all existing projects
+  const allProjects = await storage.getAllProjects();
+
+  // Remove all Zotero projects (keep non-Zotero projects)
+  const projects: Record<string, any> = {};
+  for (const [id, project] of Object.entries(allProjects)) {
+    if (project.backend !== 'zotero') {
+      projects[id] = project;
+    }
+  }
+
+  // Fetch collections from Zotero
   const collections = await zoteroAPI.getCollections();
 
-  // Convert to our project format
-  const projects: Record<string, any> = {};
+  // Add Zotero projects
   for (const collection of collections) {
     projects[collection.key] = {
+      backend: 'zotero',
       id: collection.key,
       name: collection.data.name,
       parentId: collection.data.parentCollection || undefined,
       itemCount: collection.meta?.numItems ?? 0,
       version: collection.version,
+      dateModified: Date.parse(collection.data.dateModified || ''),
     };
   }
 
   // Save to storage
   await storage.saveProjects(projects);
-  await storage.setLastSync(new Date().toISOString());
+  await storage.setLastSyncZotero(new Date().toISOString());
 
   return {
     success: true,
@@ -562,27 +576,69 @@ async function handleSyncZoteroProjects(): Promise<MessageResponse> {
 }
 
 async function handleSyncAtlosProjects(): Promise<MessageResponse> {
-  const collections = await zoteroAPI.getCollections();
+  let count = 0;
+  // 1) Get all projects from Webtero
+  const allProjects = await storage.getAllProjects();
 
-  // Convert to our project format
+  // 2) Remove all Atlos projects
   const projects: Record<string, any> = {};
-  for (const collection of collections) {
-    projects[collection.key] = {
-      id: collection.key,
-      name: collection.data.name,
-      parentId: collection.data.parentCollection || undefined,
-      itemCount: collection.meta?.numItems ?? 0,
-      version: collection.version,
-    };
+  for (const [id, project] of Object.entries(allProjects)) {
+    if (project.backend !== 'atlos') {
+      projects[id] = project;
+    }
   }
 
-  // Save to storage
+  // Get all API keys
+  const apiKeys = await storage.getAllAuthAtlos();
+
+  // 3) Create parent project for each API key
+  for (const auth of apiKeys) {
+    const parentId = `webteroatlos:${auth.projectName}`;
+
+    // Create parent project
+    projects[parentId] = {
+      backend: 'atlos',
+      id: parentId,
+      name: auth.projectName,
+      parentId: undefined,
+      itemCount: 0,
+      version: 0,
+    };
+
+    // 4) With a 1 second await between each parent, query the API for incidents
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    try {
+      // Query API for incidents (first page, already sorted by most recently updated)
+      const incidents = await atlosAPI.getProjectIncidents(auth.projectName);
+
+      // Add incidents as child projects
+      for (const incident of incidents) {
+        count++;
+        projects[incident.id] = incident;
+      }
+
+      // Update parent item count
+      projects[parentId].itemCount = incidents.length;
+
+      // update parent last modified to the first incident's dateModified
+      if (incidents.length > 0) {
+        projects[parentId].dateModified = incidents[0].dateModified;
+      }
+    } catch (error) {
+      console.error(`Failed to fetch incidents for ${auth.projectName}:`, error);
+      // Continue with other projects even if one fails
+    }
+  }
+
+  // 5) Save
   await storage.saveProjects(projects);
-  await storage.setLastSync(new Date().toISOString());
+  await storage.setLastSyncAtlos(new Date().toISOString());
 
   return {
     success: true,
     data: projects,
+    count: count
   };
 }
 
