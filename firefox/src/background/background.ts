@@ -59,8 +59,11 @@ browser.runtime.onMessage.addListener(
         case 'GET_ANNOTATIONS':
           return await handleGetAnnotations(message.data as { url: string });
 
-        case 'SYNC_PROJECTS':
-          return await handleSyncProjects();
+        case 'SYNC_PROJECTS_ZOTERO':
+          return await handleSyncZoteroProjects();
+
+        case 'SYNC_PROJECTS_ATLOS':
+          return await handleSyncAtlosProjects();
 
         case 'DELETE_ANNOTATION':
           return await handleDeleteAnnotation(message.data as { id: string });
@@ -533,7 +536,32 @@ async function handleGetAnnotations(data: {
     }
 ]
  */
-async function handleSyncProjects(): Promise<MessageResponse> {
+async function handleSyncZoteroProjects(): Promise<MessageResponse> {
+  const collections = await zoteroAPI.getCollections();
+
+  // Convert to our project format
+  const projects: Record<string, any> = {};
+  for (const collection of collections) {
+    projects[collection.key] = {
+      id: collection.key,
+      name: collection.data.name,
+      parentId: collection.data.parentCollection || undefined,
+      itemCount: collection.meta?.numItems ?? 0,
+      version: collection.version,
+    };
+  }
+
+  // Save to storage
+  await storage.saveProjects(projects);
+  await storage.setLastSync(new Date().toISOString());
+
+  return {
+    success: true,
+    data: projects,
+  };
+}
+
+async function handleSyncAtlosProjects(): Promise<MessageResponse> {
   const collections = await zoteroAPI.getCollections();
 
   // Convert to our project format

@@ -58,7 +58,8 @@ export interface AuthDataZotero {
 }
 
 export interface AuthDataAtlos {
-  apiKeyAtlos: string;
+  apiKey: string;
+  projectName: string;
 }
 
 /**
@@ -150,7 +151,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export interface StorageData {
   authZotero?: AuthDataZotero;
-  authAtlos?: AuthDataAtlos;
+  authAtlos?: AuthDataAtlos[];
   pages: Record<string, SavedPage>;
   annotations: Record<string, Annotation>;
   projects: Record<string, Project>;
@@ -271,7 +272,7 @@ export type MessageType =
   | 'CREATE_ANNOTATION'
   | 'UPDATE_ANNOTATION'
   | 'GET_ANNOTATIONS'
-  | 'SYNC_PROJECTS'
+  | 'SYNC_PROJECTS_ZOTERO'
   | 'SYNC_PROJECTS_ATLOS'
   | 'HIGHLIGHT_TEXT'
   | 'GET_ALL_SNAPSHOT_ANNOTATIONS'

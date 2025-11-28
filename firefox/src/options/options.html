@@ -50,7 +50,7 @@
               <small>How many projects to show at once in the sidebar for selecting</small>
             </span>
           </label>
-        
+
         </div>
 
         <div class="toggle-group">
@@ -84,6 +84,59 @@
         </div>
         <div id="settingsStatus" class="settings-status"></div>
       </section>
+      <section class="authAtlos-section">
+        <h2>Atlos Authentication</h2>
+
+        <div class="statusAtlos" id="statusAtlos"></div>
+
+        <div class="atlos-credentials-container">
+          <table id="atlosCredentialsTable" class="atlos-table">
+            <thead>
+              <tr>
+                <th>Project Name</th>
+                <th>API Key</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="atlosCredentialsBody">
+              <!-- Rows will be dynamically added here -->
+            </tbody>
+          </table>
+
+          <form id="authAtlosForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="atlasProjectName">Project Name:</label>
+                <input type="text" id="atlasProjectName" name="atlasProjectName" placeholder="Enter project name" required>
+              </div>
+
+              <div class="form-group">
+                <label for="apiKeyAtlos">API Key:</label>
+                <input type="text" id="apiKeyAtlos" name="apiKeyAtlos" placeholder="Enter your Atlos API key" autocomplete="off"
+                  data-1p-ignore data-lpignore="true" required>
+              </div>
+
+              <div class="form-actions">
+                <button type="submit">Add/Update</button>
+              </div>
+            </div>
+          </form>
+
+          <small>
+            <p><strong>How to get an Atlos API token:</strong></p>
+            <ol>
+              <li>Navigate to <a href="https://platform.atlos.org/projects" target="_blank">the project</a> for which you need an API token.</li>
+              <li>Navigate to the Access page of the project.</li>
+              <li>Press the Create button in the API Tokens section of the page.</li>
+              <li>Assign the token a name, write a description of what the token is used for, and select <em>all three
+                  permissions: Read, Comment, and Edit</em> for the token.</li>
+              <li>Click the Create Token button.</li>
+              <li>Paste token above along with the project name.</li>
+            </ol>
+          </small>
+        </div>
+      </section>
+
       <section class="auth-section">
         <h2>Zotero Authentication</h2>
 
@@ -136,39 +189,7 @@
           </div>
         </form>
       </section>
-      <section class="authAtlos-section">
-        <h2>Atlos Authentication</h2>
 
-        <div class="statusAtlos" id="statusAtlos"></div>
-
-        <form id="authAtlosForm">
-
-          <div class="form-group">
-            <label for="apiKeyAtlos">API Key:</label>
-            <input type="text" id="apiKeyAtlos" name="apiKeyAtlos" placeholder="Enter your Atlos API key"
-              autocomplete="off" data-1p-ignore data-lpignore="true">
-            <small>
-              <ol>
-                <li>Navigate to <a href="https://platform.atlos.org/projects" target="_blank">the project</a> for which
-                  you need
-                  an API token.
-                </li>
-                <li>Navigate to the Access page of the project.</li>
-                <li>Press the Create button in the API Tokens section of the page.</li>
-                <li>Assign the token a name, write a description of what the token is used for, and select <em>all three
-                    permissions: Read, Comment, and Edit</em> for the token.</li>
-                <li>Click the Create Token button.</li>
-                <li>Paste token above.</li>
-              </ol>
-            </small>
-          </div>
-
-          <div class="form-actions">
-            <button type="submit" id="saveBtn">Save Credentials</button>
-            <button type="button" id="clearBtn">Clear Credentials</button>
-          </div>
-        </form>
-      </section>
 
     </main>
   </div>

@@ -47,15 +47,36 @@ class Storage {
   }
 
   // Atlos Auth operations
-  async getAuthAtlos(): Promise<AuthDataAtlos | undefined> {
-    return this.get('authAtlos');
+  async getAllAuthAtlos(): Promise<AuthDataAtlos[]> {
+    return (await this.get('authAtlos')) ?? [];
   }
 
-  async setAuthAtlos(auth: AuthDataAtlos): Promise<void> {
-    await this.set('authAtlos', auth);
+  async addAuthAtlos(auth: AuthDataAtlos): Promise<void> {
+    const existing = await this.getAllAuthAtlos();
+    // Check if this project name already exists
+    const index = existing.findIndex(a => a.projectName === auth.projectName);
+    if (index >= 0) {
+      // Update existing entry
+      existing[index] = auth;
+    } else {
+      // Add new entry
+      existing.push(auth);
+    }
+    await this.set('authAtlos', existing);
   }
 
-  async clearAuthAtlos(): Promise<void> {
+  async removeAuthAtlos(projectName: string): Promise<void> {
+    const existing = await this.getAllAuthAtlos();
+    const filtered = existing.filter(a => a.projectName !== projectName);
+    await this.set('authAtlos', filtered);
+  }
+
+  async getAuthAtlosByProject(projectName: string): Promise<AuthDataAtlos | undefined> {
+    const existing = await this.getAllAuthAtlos();
+    return existing.find(a => a.projectName === projectName);
+  }
+
+  async clearAllAuthAtlos(): Promise<void> {
     await browser.storage.local.remove('authAtlos');
   }
 
