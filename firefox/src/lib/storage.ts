@@ -1,6 +1,6 @@
 import type {
   StorageData,
-  AuthData,
+  AuthDataZotero,
   AuthDataAtlos,
   SavedPage,
   Annotation,
@@ -34,16 +34,16 @@ class Storage {
   }
 
   // Auth operations
-  async getAuth(): Promise<AuthData | undefined> {
-    return this.get('auth');
+  async getAuth(): Promise<AuthDataZotero | undefined> {
+    return this.get('authZotero');
   }
 
-  async setAuth(auth: AuthData): Promise<void> {
-    await this.set('auth', auth);
+  async setAuth(auth: AuthDataZotero): Promise<void> {
+    await this.set('authZotero', auth);
   }
 
   async clearAuth(): Promise<void> {
-    await browser.storage.local.remove('auth');
+    await browser.storage.local.remove('authZotero');
   }
 
   // Atlos Auth operations

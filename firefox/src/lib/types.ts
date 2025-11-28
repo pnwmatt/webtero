@@ -51,7 +51,7 @@ export interface Snapshot {
   url: string; // URL of the snapshot
 }
 
-export interface AuthData {
+export interface AuthDataZotero {
   apiKey: string;
   userID: string;
   username?: string;
@@ -146,7 +146,7 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 export interface StorageData {
-  auth?: AuthData;
+  authZotero?: AuthDataZotero;
   authAtlos?: AuthDataAtlos;
   pages: Record<string, SavedPage>;
   annotations: Record<string, Annotation>;

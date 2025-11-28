@@ -25,9 +25,19 @@ async function loadCredentials() {
   const auth = await storage.getAuth();
   if (auth) {
     usernameInput.value = auth.username || '';
-    apiKeyInput.value = auth.apiKey;
+    apiKeyInput.value = maskKey(auth.apiKey);
     userIDInput.value = auth.userID;
   }
+
+  const authAtlos = await storage.getAuthAtlos();
+  if (authAtlos) {
+    apiKeyAtlosInput.value = maskKey(authAtlos.apiKeyAtlos);
+  }
+}
+
+function maskKey(key: string): string {
+  const maskLength = key.length - 4;
+  return key.substring(0, 4) + '*'.repeat(maskLength);
 }
 
 // Load existing settings
@@ -43,6 +53,9 @@ function showStatus(message: string, isError: boolean = false) {
   statusDiv.textContent = message;
   statusDiv.className = `status ${isError ? 'error' : 'success'}`;
 
+  statusDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  statusDiv.focus();
+
   setTimeout(() => {
     statusDiv.className = 'status';
   }, 3000);
@@ -53,9 +66,12 @@ function showStatusAtlos(message: string, isError: boolean = false) {
   statusAtlosDiv.textContent = message;
   statusAtlosDiv.className = `status ${isError ? 'error' : 'success'}`;
 
+  statusAtlosDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  statusAtlosDiv.focus();
+
   setTimeout(() => {
     statusAtlosDiv.className = 'status';
-  }, 3000);
+  }, 6000);
 }
 
 // Show sync status
@@ -78,13 +94,21 @@ form.addEventListener('submit', async (e) => {
   const userID = userIDInput.value.trim();
 
   if (!apiKey) {
-    showStatus('Please enter an API key', true);
+    showStatus('Please enter an API key. Key removed from device storage.', true);
+    await storage.clearAuth();
+    return;
+  }
+
+  if (apiKey.indexOf("*") !== -1) {
+    showStatus('API key appears to be masked. Please enter the full API key or clear out its value and save again.', true);
     return;
   }
 
   try {
     await storage.setAuth({ apiKey, userID });
     showStatus('Credentials saved successfully!');
+
+    apiKeyInput.value = maskKey(apiKey);
   } catch (error) {
     showStatus('Failed to save credentials', true);
     console.error(error);
@@ -98,13 +122,21 @@ formAtlos.addEventListener('submit', async (e) => {
   const apiKeyAtlos = apiKeyAtlosInput.value.trim();
 
   if (!apiKeyAtlos) {
-    showStatusAtlos('Please enter an API key', true);
+    showStatusAtlos('Please enter an API key. Key removed from device storage.', true);
+    await storage.clearAuthAtlos();
+    return;
+  }
+
+  if (apiKeyAtlos.indexOf("*") !== -1) {
+    showStatusAtlos('API key appears to be masked. Please enter the full API key or clear out its value and save again.', true);
     return;
   }
 
   try {
     await storage.setAuthAtlos({ apiKeyAtlos });
     showStatusAtlos('Credentials saved successfully!');
+
+    apiKeyAtlosInput.value = maskKey(apiKeyAtlos);
   } catch (error) {
     showStatusAtlos('Failed to save credentials', true);
     console.error(error);

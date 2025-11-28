@@ -24,17 +24,17 @@
           the extension.</p>
         <div class="form-actions">
           <button type="button" id="syncProjectsBtn">Sync Zotero Projects</button>
-          </div>
-          <div id="syncStatus" class="sync-status"></div>
-          </section>
-          
-          <section class="syncAtlos-section">
-            <h2>Atlos Library Sync</h2>
-            <p class="section-description">Sync your <a href="https://atlos.org/">Atlos</a> (investigative journalism
-              platform) projects with the extension.
-            </p>
-            <div class="form-actions">
-              <button type="button" id="syncProjectsAtlosBtn">Sync Atlos Projects</button>
+        </div>
+        <div id="syncStatus" class="sync-status"></div>
+      </section>
+
+      <section class="syncAtlos-section">
+        <h2>Atlos Library Sync</h2>
+        <p class="section-description">Sync your <a href="https://atlos.org/">Atlos</a> (investigative journalism
+          platform) projects with the extension.
+        </p>
+        <div class="form-actions">
+          <button type="button" id="syncProjectsAtlosBtn">Sync Atlos Projects</button>
         </div>
         <div id="syncStatus" class="sync-status"></div>
       </section>
@@ -108,7 +108,8 @@
 
           <div class="form-group">
             <label for="apiKey">API Key:</label>
-            <input type="text" id="apiKey" name="apiKey" placeholder="Enter your Zotero API key">
+            <input type="text" id="apiKey" name="apiKey" placeholder="Enter your Zotero API key" autocomplete="off"
+              data-1p-ignore data-lpignore="true">
             <small>
               Get your API key from
               <a href="https://www.zotero.org/settings/keys" target="_blank">
@@ -125,17 +126,19 @@
       </section>
       <section class="authAtlos-section">
         <h2>Atlos Authentication</h2>
-      
+
         <div class="statusAtlos" id="statusAtlos"></div>
-        
+
         <form id="authAtlosForm">
-        
+
           <div class="form-group">
             <label for="apiKeyAtlos">API Key:</label>
-            <input type="text" id="apiKeyAtlos" name="apiKeyAtlos" placeholder="Enter your Atlos API key">
+            <input type="text" id="apiKeyAtlos" name="apiKeyAtlos" placeholder="Enter your Atlos API key"
+              autocomplete="off" data-1p-ignore data-lpignore="true">
             <small>
               <ol>
-                <li>Navigate to <a href="https://platform.atlos.org/projects" target="_blank">the project</a> for which you need
+                <li>Navigate to <a href="https://platform.atlos.org/projects" target="_blank">the project</a> for which
+                  you need
                   an API token.
                 </li>
                 <li>Navigate to the Access page of the project.</li>
@@ -147,13 +150,13 @@
               </ol>
             </small>
           </div>
-        
+
           <div class="form-actions">
             <button type="submit" id="saveBtn">Save Credentials</button>
             <button type="button" id="clearBtn">Clear Credentials</button>
           </div>
         </form>
-        </section>
+      </section>
 
     </main>
   </div>
