@@ -221,6 +221,9 @@ syncProjectsBtn.addEventListener('click', async () => {
     if (response.success) {
       const count = response.data ? Object.keys(response.data).length : 0;
       showSyncStatus(`Synced ${count} project${count === 1 ? '' : 's'} successfully!`, 'success');
+      await browser.runtime.sendMessage({
+        type: 'PROJECTS_UPDATED',
+      });
     } else {
       showSyncStatus(`Sync failed: ${response.error || 'Unknown error'}`, 'error');
     }
@@ -245,6 +248,9 @@ syncProjectsAtlosBtn.addEventListener('click', async () => {
     if (response.success) {
       const count = response.data ? Object.keys(response.data).length : 0;
       showSyncStatusAtlos(`Synced ${count} Atlos project${count === 1 ? '' : 's'} successfully!`, 'success');
+      await browser.runtime.sendMessage({
+        type: 'PROJECTS_UPDATED',
+      });
     } else {
       showSyncStatusAtlos(`Sync failed: ${response.error || 'Unknown error'}`, 'error');
     }
@@ -263,6 +269,9 @@ sidebarProjectSelectHeight.addEventListener('change', async () => {
       sidebarProjectSelectHeight: parseInt(sidebarProjectSelectHeight.value, 10),
     });
     showSettingsStatus('Sidebar project select height setting saved.', 'success');
+    await browser.runtime.sendMessage({
+      type: 'PROJECTS_UPDATED',
+    });
   } catch (error) {
     console.error('Failed to save sidebar project select height setting:', error);
     showSettingsStatus('Failed to save sidebar project select height setting.', 'error');

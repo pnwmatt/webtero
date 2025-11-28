@@ -385,7 +385,7 @@ async function displayPageStatus() {
       hasTabId: !!currentTab?.id,
       hasUrl: !!currentTab?.url,
       currentPage: !!currentPage,
-      isAutoSaveInProgress,
+      ixsAutoSaveInProgress,
     });
   }
 
@@ -884,9 +884,22 @@ function buildHierarchicalProjectList(projects: Project[]): Project[] {
 async function loadProjectsForDropdown() {
   // Preserve current selection
   const previousValue = projectDropdown.value;
+  const previousValues = projectDropdown.multiple
+    ? Array.from(projectDropdown.selectedOptions).map(opt => opt.value)
+    : [previousValue];
 
   const projects = await storage.getAllProjects();
   const projectsArray = Object.values(projects);
+
+  // Configure dropdown based on sidebarProjectSelectHeight setting
+  const selectHeight = cachedSettings.sidebarProjectSelectHeight || 1;
+  if (selectHeight > 1) {
+    projectDropdown.multiple = true;
+    projectDropdown.size = selectHeight;
+  } else {
+    projectDropdown.multiple = false;
+    projectDropdown.removeAttribute('size');
+  }
 
   // Clear and rebuild dropdown using DOM manipulation
   projectDropdown.textContent = '';
@@ -894,7 +907,7 @@ async function loadProjectsForDropdown() {
   if (projectsArray.length === 0) {
     const option = document.createElement('option');
     option.value = '';
-    option.textContent = 'No projects (click sync)';
+    option.textContent = 'No projects (click sync in options)';
     projectDropdown.appendChild(option);
     return;
   }
@@ -916,10 +929,22 @@ async function loadProjectsForDropdown() {
     projectDropdown.appendChild(option);
   }
 
-  // Restore previous selection if it still exists
-  if (previousValue && projectDropdown.querySelector(`option[value="${previousValue}"]`)) {
-    projectDropdown.value = previousValue;
+  // Restore previous selection(s) if they still exist
+  if (projectDropdown.multiple) {
+    // Restore multiple selections
+    for (const val of previousValues) {
+      const option = projectDropdown.querySelector(`option[value="${val}"]`) as HTMLOptionElement;
+      if (option) {
+        option.selected = true;
+      }
+    }
+  } else {
+    // Restore single selection
+    if (previousValue && projectDropdown.querySelector(`option[value="${previousValue}"]`)) {
+      projectDropdown.value = previousValue;
+    }
   }
+
 }
 
 // Save page
@@ -972,8 +997,16 @@ savePageBtn.addEventListener('click', async () => {
   animateProgress(20, 'Creating item...');
 
   try {
-    const selectedProject = projectDropdown.value;
-    const collections = selectedProject ? [selectedProject] : [];
+    // Get selected project(s)
+    let collections: string[] = [];
+    if (projectDropdown.multiple) {
+      collections = Array.from(projectDropdown.selectedOptions)
+        .map(opt => opt.value)
+        .filter(val => val !== ''); // Filter out "My Library" option
+    } else {
+      const selectedProject = projectDropdown.value;
+      collections = selectedProject ? [selectedProject] : [];
+    }
 
     // Progress to capturing stage after short delay
     setTimeout(() => animateProgress(50, 'Capturing page...'), 500);
@@ -2030,6 +2063,14 @@ browser.runtime.onMessage.addListener((message) => {
     message.type === 'OUTBOX_ANNOTATION_DELETED'
   ) {
     loadPageData();
+  }
+
+  // When Z or A sync, or Sidebar Height setting changes
+  if (
+    message.type == 'PROJECTS_UPDATED'
+  ) {
+    loadProjects();
+    loadProjectsForDropdown();
   }
 });
 
