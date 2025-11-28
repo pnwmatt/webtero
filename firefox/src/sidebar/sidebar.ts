@@ -1,4 +1,4 @@
-import type { SavedPage, Annotation, Project, Snapshot, OutboxAnnotation, Settings } from '../lib/types';
+import type { SavedPage, Annotation, WebteroProject, Snapshot, OutboxAnnotation, Settings } from '../lib/types';
 import { DEFAULT_SETTINGS } from '../lib/types';
 import { storage } from '../lib/storage';
 import { formatDate, createAnnotationPreview } from '../lib/utils';
@@ -836,7 +836,7 @@ async function openSnapshotInReader(itemKey: string, snapshotKey: string) {
 }
 
 // Build hierarchical project list sorted by last modified descending
-function buildHierarchicalProjectList(projects: Project[]): Project[] {
+function buildHierarchicalProjectList(projects: WebteroProject[]): WebteroProject[] {
   // Separate top-level and child projects
   const topLevel = projects.filter((p) => !p.parentId);
   const children = projects.filter((p) => p.parentId);
@@ -849,7 +849,7 @@ function buildHierarchicalProjectList(projects: Project[]): Project[] {
   });
 
   // Group children by parent
-  const childrenByParent: Record<string, Project[]> = {};
+  const childrenByParent: Record<string, WebteroProject[]> = {};
   for (const child of children) {
     if (child.parentId) {
       if (!childrenByParent[child.parentId]) {
@@ -869,7 +869,7 @@ function buildHierarchicalProjectList(projects: Project[]): Project[] {
   }
 
   // Build final list: parent followed by its children
-  const result: Project[] = [];
+  const result: WebteroProject[] = [];
   for (const parent of topLevel) {
     result.push(parent);
     if (childrenByParent[parent.id]) {

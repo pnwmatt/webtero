@@ -42,32 +42,6 @@ class ZoteroAPI {
   }
 
   /**
-   * Create a new collection
-   */
-  async createCollection(name: string, parentId?: string): Promise<ZoteroCollection> {
-    const userID = await this.getUserID();
-    const headers = await this.getHeaders();
-
-    const data = {
-      name,
-      ...(parentId && { parentCollection: parentId }),
-    };
-
-    const response = await fetch(`${API_BASE}/users/${userID}/collections`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify([data]),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to create collection: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    return result.successful['0'];
-  }
-
-  /**
    * Search for an existing item by URL
    * Returns the first matching item or null if none found
    */

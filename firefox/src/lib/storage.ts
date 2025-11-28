@@ -4,7 +4,7 @@ import type {
   AuthDataAtlos,
   SavedPage,
   Annotation,
-  Project,
+  WebteroProject,
   PageFocusSession,
   PageLink,
   AutoSaveTab,
@@ -141,22 +141,22 @@ class Storage {
   }
 
   // Project operations
-  async getProject(id: string): Promise<Project | undefined> {
+  async getProject(id: string): Promise<WebteroProject | undefined> {
     const projects = await this.get('projects');
     return projects?.[id];
   }
 
-  async getAllProjects(): Promise<Record<string, Project>> {
+  async getAllProjects(): Promise<Record<string, WebteroProject>> {
     return (await this.get('projects')) ?? {};
   }
 
-  async saveProject(project: Project): Promise<void> {
+  async saveProject(project: WebteroProject): Promise<void> {
     const projects = (await this.get('projects')) ?? {};
     projects[project.id] = project;
     await this.set('projects', projects);
   }
 
-  async saveProjects(projectsData: Record<string, Project>): Promise<void> {
+  async saveProjects(projectsData: Record<string, WebteroProject>): Promise<void> {
     await this.set('projects', projectsData);
   }
 
@@ -169,22 +169,22 @@ class Storage {
   }
 
   // Atlos Project operations
-  async getProjectAtlos(id: string): Promise<Project | undefined> {
+  async getProjectAtlos(id: string): Promise<WebteroProject | undefined> {
     const projects = await this.get('projectsAtlos');
     return projects?.[id];
   }
 
-  async getAllProjectsAtlos(): Promise<Record<string, Project>> {
+  async getAllProjectsAtlos(): Promise<Record<string, WebteroProject>> {
     return (await this.get('projectsAtlos')) ?? {};
   }
 
-  async saveProjectAtlos(project: Project): Promise<void> {
+  async saveProjectAtlos(project: WebteroProject): Promise<void> {
     const projects = (await this.get('projectsAtlos')) ?? {};
     projects[project.id] = project;
     await this.set('projectsAtlos', projects);
   }
 
-  async saveProjectsAtlos(projectsData: Record<string, Project>): Promise<void> {
+  async saveProjectsAtlos(projectsData: Record<string, WebteroProject>): Promise<void> {
     await this.set('projectsAtlos', projectsData);
   }
 

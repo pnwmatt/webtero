@@ -2,7 +2,7 @@
 
 export type HighlightColor = 'yellow' | 'red' | 'green' | 'blue' | 'purple' | 'magenta' | 'orange' | 'gray';
 
-export interface Project {
+export interface WebteroProject {
   id: string; // Zotero collection key
   name: string; // Collection name
   parentId?: string; // Parent collection (for subcollections)
@@ -154,8 +154,8 @@ export interface StorageData {
   authAtlos?: AuthDataAtlos[];
   pages: Record<string, SavedPage>;
   annotations: Record<string, Annotation>;
-  projects: Record<string, Project>;
-  projectsAtlos: Record<string, Project>;
+  projects: Record<string, WebteroProject>;
+  projectsAtlos: Record<string, WebteroProject>;
   lastSync?: string;
   lastSyncAtlos?: string;
   // Page focus tracking (keyed by session ID)
