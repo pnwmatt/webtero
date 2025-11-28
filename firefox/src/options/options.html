@@ -17,7 +17,7 @@
     </header>
 
     <main>
-      <section class="sync-section">
+      <section class="sync-section" id="zoteroSyncSection">
         <h2>Zotero Library Sync</h2>
         <p class="section-description">Sync your <a href="https://zotero.com/">Zotero</a> (researcher and citation
           platform) collections (projects) with
@@ -28,7 +28,7 @@
         <div id="syncStatus" class="sync-status"></div>
       </section>
 
-      <section class="syncAtlos-section">
+      <section class="syncAtlos-section" id="atlosSyncSection">
         <h2>Atlos Library Sync</h2>
         <p class="section-description">Sync your <a href="https://atlos.org/">Atlos</a> (investigative journalism
           platform) projects with the extension.
@@ -36,11 +36,22 @@
         <div class="form-actions">
           <button type="button" id="syncProjectsAtlosBtn">Sync Atlos Projects</button>
         </div>
-        <div id="syncStatus" class="sync-status"></div>
+        <div id="syncStatusAtlos" class="syncAtlos-status"></div>
       </section>
 
       <section class="settings-section">
         <h2>Display Settings</h2>
+
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <input type="number" id="sidebarProjectSelectHeight" maxlength="2">
+            <span class="toggle-text">
+              <strong>Sidebar Projects Select Height</strong>
+              <small>How many projects to show at once in the sidebar for selecting</small>
+            </span>
+          </label>
+        
+        </div>
 
         <div class="toggle-group">
           <label class="toggle-label">
@@ -71,6 +82,7 @@
             </span>
           </label>
         </div>
+        <div id="settingsStatus" class="settings-status"></div>
       </section>
       <section class="auth-section">
         <h2>Zotero Authentication</h2>

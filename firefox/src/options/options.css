@@ -152,8 +152,10 @@ button[type="button"]:hover {
   font-size: 0.9rem;
 }
 
-/* Sync section */
-.sync-status {
+/* Zotero and Atlos Sync and Settings Status */
+.sync-status,
+.syncAtlos-status,
+.settings-status {
   margin-top: 1rem;
   padding: 0.75rem;
   border-radius: 4px;
@@ -161,25 +163,74 @@ button[type="button"]:hover {
   display: none;
 }
 
-.sync-status.visible {
+.sync-status.visible,
+.syncAtlos-status.visible,
+.settings-status.visible {
   display: block;
+  animation: slideDown 0.3s ease-out;
 }
 
-.sync-status.success {
+.sync-status.hide,
+.syncAtlos-status.hide,
+.settings-status.hide {
+  animation: slideUp 0.3s ease-out forwards;
+}
+
+@keyframes slideDown {
+  from {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    max-height: 100px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    max-height: 100px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+.sync-status.success,
+.syncAtlos-status.success,
+.settings-status.success {
   background: #e8f5e9;
   color: #2e7d32;
 }
 
-.sync-status.error {
+.sync-status.error,
+.syncAtlos-status.error,
+.settings-status.error {
   background: #ffebee;
   color: #c62828;
 }
 
-.sync-status.loading {
+.sync-status.loading,
+.syncAtlos-status.loading,
+.settings-status.loading {
   background: #e3f2fd;
   color: #1565c0;
 }
 
+/* input settings */
+input[type="number"] {
+  width: 50px;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+}
 /* Toggle settings */
 .toggle-group {
   margin-bottom: 1rem;
@@ -262,7 +313,7 @@ button[type="button"]:hover {
 
 .auth-divider::before,
 .auth-divider::after {
-  content: '';
+  content: "";
   flex: 1;
   border-bottom: 1px solid #ddd;
 }

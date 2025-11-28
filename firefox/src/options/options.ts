@@ -1,23 +1,31 @@
 import { storage } from '../lib/storage';
 
+// Zotero elements
 const form = document.getElementById('authForm') as HTMLFormElement;
 const usernameInput = document.getElementById('username') as HTMLInputElement;
 const apiKeyInput = document.getElementById('apiKey') as HTMLInputElement;
 const userIDInput = document.getElementById('userID') as HTMLInputElement;
 const clearBtn = document.getElementById('clearBtn') as HTMLButtonElement;
 const statusDiv = document.getElementById('status') as HTMLDivElement;
+const zoteroSyncSection = document.getElementById('zoteroSyncSection') as HTMLDivElement;
 const syncProjectsBtn = document.getElementById('syncProjectsBtn') as HTMLButtonElement;
 const syncStatus = document.getElementById('syncStatus') as HTMLDivElement;
+const oauthSignInBtn = document.getElementById('oauthSignInBtn') as HTMLButtonElement;
+const oauthError = document.getElementById('oauthError') as HTMLParagraphElement;
+
+// Settings elements
+const sidebarProjectSelectHeight = document.getElementById('sidebarProjectSelectHeight') as HTMLInputElement;
 const linkIndicatorsCheckbox = document.getElementById('linkIndicatorsEnabled') as HTMLInputElement;
 const readingProgressCheckbox = document.getElementById('readingProgressEnabled') as HTMLInputElement;
 const autoSaveCheckbox = document.getElementById('autoSaveEnabled') as HTMLInputElement;
-const oauthSignInBtn = document.getElementById('oauthSignInBtn') as HTMLButtonElement;
-const oauthError = document.getElementById('oauthError') as HTMLParagraphElement;
+const settingsStatus = document.getElementById('settingsStatus') as HTMLDivElement;
 
 // Atlos elements
 const formAtlos = document.getElementById('authAtlosForm') as HTMLFormElement;
 const apiKeyAtlosInput = document.getElementById('apiKeyAtlos') as HTMLInputElement;
+const atlosSyncSection = document.getElementById('atlosSyncSection') as HTMLDivElement;
 const statusAtlosDiv = document.getElementById('statusAtlos') as HTMLDivElement;
+const syncStatusAtlos = document.getElementById('syncStatusAtlos') as HTMLDivElement;
 const syncProjectsAtlosBtn = document.getElementById('syncProjectsAtlosBtn') as HTMLButtonElement;
 
 // Load existing credentials
@@ -27,11 +35,17 @@ async function loadCredentials() {
     usernameInput.value = auth.username || '';
     apiKeyInput.value = maskKey(auth.apiKey);
     userIDInput.value = auth.userID;
+    zoteroSyncSection.style.display = 'block';
+  } else {
+    zoteroSyncSection.style.display = 'none';
   }
 
   const authAtlos = await storage.getAuthAtlos();
   if (authAtlos) {
     apiKeyAtlosInput.value = maskKey(authAtlos.apiKeyAtlos);
+    atlosSyncSection.style.display = 'block';
+  } else {
+    atlosSyncSection.style.display = 'none';
   }
 }
 
@@ -46,9 +60,10 @@ async function loadSettings() {
   linkIndicatorsCheckbox.checked = settings.linkIndicatorsEnabled;
   readingProgressCheckbox.checked = settings.readingProgressEnabled;
   autoSaveCheckbox.checked = settings.autoSaveEnabled;
+  sidebarProjectSelectHeight.value = settings.sidebarProjectSelectHeight.toString();
 }
 
-// Show status message
+// Show Zotero status message
 function showStatus(message: string, isError: boolean = false) {
   statusDiv.textContent = message;
   statusDiv.className = `status ${isError ? 'error' : 'success'}`;
@@ -70,14 +85,17 @@ function showStatusAtlos(message: string, isError: boolean = false) {
   statusAtlosDiv.focus();
 
   setTimeout(() => {
-    statusAtlosDiv.className = 'status';
+    statusAtlosDiv.className = 'statusAtlos';
   }, 6000);
 }
 
-// Show sync status
+// Show Zotero sync status
 function showSyncStatus(message: string, type: 'success' | 'error' | 'loading') {
   syncStatus.textContent = message;
   syncStatus.className = `sync-status visible ${type}`;
+
+  syncStatus.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  syncStatus.focus();
 
   if (type !== 'loading') {
     setTimeout(() => {
@@ -86,7 +104,38 @@ function showSyncStatus(message: string, type: 'success' | 'error' | 'loading') 
   }
 }
 
-// Save credentials
+// Show Atlos sync status
+function showSyncStatusAtlos(message: string, type: 'success' | 'error' | 'loading') {
+  syncStatusAtlos.textContent = message;
+  syncStatusAtlos.className = `sync-status visible ${type}`;
+
+  syncStatusAtlos.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  syncStatusAtlos.focus();
+
+  if (type !== 'loading') {
+    setTimeout(() => {
+      syncStatusAtlos.className = 'sync-status';
+    }, 5000);
+  }
+}
+
+// Show Settings Status
+function showSettingsStatus(message: string, type: 'success' | 'error' | 'loading') {
+  settingsStatus.textContent = message;
+  settingsStatus.className = `settings-status visible ${type}`;
+
+  settingsStatus.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  settingsStatus.focus();
+
+  if (type !== 'loading') {
+    setTimeout(() => {
+      settingsStatus.className = 'settings-status';
+    }, 5000);
+  }
+}
+
+
+// Save Zotero credentials
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
 
@@ -159,7 +208,7 @@ clearBtn.addEventListener('click', async () => {
   }
 });
 
-// Sync projects
+// Sync Zotero projects
 syncProjectsBtn.addEventListener('click', async () => {
   syncProjectsBtn.disabled = true;
   showSyncStatus('Syncing projects...', 'loading');
@@ -186,7 +235,7 @@ syncProjectsBtn.addEventListener('click', async () => {
 // Sync Atlos projects
 syncProjectsAtlosBtn.addEventListener('click', async () => {
   syncProjectsAtlosBtn.disabled = true;
-  showSyncStatus('Syncing Atlos projects...', 'loading');
+  showSyncStatusAtlos('Syncing Atlos projects...', 'loading');
 
   try {
     const response = await browser.runtime.sendMessage({
@@ -195,17 +244,31 @@ syncProjectsAtlosBtn.addEventListener('click', async () => {
 
     if (response.success) {
       const count = response.data ? Object.keys(response.data).length : 0;
-      showSyncStatus(`Synced ${count} Atlos project${count === 1 ? '' : 's'} successfully!`, 'success');
+      showSyncStatusAtlos(`Synced ${count} Atlos project${count === 1 ? '' : 's'} successfully!`, 'success');
     } else {
-      showSyncStatus(`Sync failed: ${response.error || 'Unknown error'}`, 'error');
+      showSyncStatusAtlos(`Sync failed: ${response.error || 'Unknown error'}`, 'error');
     }
   } catch (error) {
     console.error('Failed to sync Atlos projects:', error);
-    showSyncStatus('Failed to sync Atlos projects', 'error');
+    showSyncStatusAtlos('Failed to sync Atlos projects', 'error');
   } finally {
     syncProjectsAtlosBtn.disabled = false;
   }
 });
+
+// Save settings when value changes
+sidebarProjectSelectHeight.addEventListener('change', async () => {
+  try {
+    await storage.updateSettings({
+      sidebarProjectSelectHeight: parseInt(sidebarProjectSelectHeight.value, 10),
+    });
+    showSettingsStatus('Sidebar project select height setting saved.', 'success');
+  } catch (error) {
+    console.error('Failed to save sidebar project select height setting:', error);
+    showSettingsStatus('Failed to save sidebar project select height setting.', 'error');
+  }
+});
+
 
 // Save settings when toggles change
 linkIndicatorsCheckbox.addEventListener('change', async () => {
@@ -213,8 +276,10 @@ linkIndicatorsCheckbox.addEventListener('change', async () => {
     await storage.updateSettings({
       linkIndicatorsEnabled: linkIndicatorsCheckbox.checked,
     });
+    showSettingsStatus('Link indicator setting saved.', 'success');
   } catch (error) {
     console.error('Failed to save link indicators setting:', error);
+    showSettingsStatus('Failed to save link indicator setting.', 'error');
   }
 });
 
@@ -223,8 +288,10 @@ readingProgressCheckbox.addEventListener('change', async () => {
     await storage.updateSettings({
       readingProgressEnabled: readingProgressCheckbox.checked,
     });
+    showSettingsStatus('Reading progress setting saved.', 'success');
   } catch (error) {
     console.error('Failed to save reading progress setting:', error);
+    showSettingsStatus('Failed to save reading progress setting.', 'error');
   }
 });
 
@@ -233,6 +300,7 @@ autoSaveCheckbox.addEventListener('change', async () => {
     await storage.updateSettings({
       autoSaveEnabled: autoSaveCheckbox.checked,
     });
+    showSettingsStatus('Auto-save setting saved.', 'success');
   } catch (error) {
     console.error('Failed to save auto-save setting:', error);
   }

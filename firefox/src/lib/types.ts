@@ -137,12 +137,15 @@ export interface Settings {
   readingProgressEnabled: boolean;
   // Auto-save pages when clicking links from saved pages
   autoSaveEnabled: boolean;
+  // Sidebar projects select height
+  sidebarProjectSelectHeight: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   linkIndicatorsEnabled: true,
   readingProgressEnabled: true,
   autoSaveEnabled: true,
+  sidebarProjectSelectHeight: 1,
 };
 
 export interface StorageData {
