@@ -13,22 +13,35 @@
   <div class="container">
     <header>
       <h1>Webtero Settings</h1>
-      <p>Configure your Zotero API credentials</p>
+      <p>Configure your API connections, display settings, </p>
     </header>
 
     <main>
       <section class="sync-section">
-        <h2>Library Sync</h2>
-        <p class="section-description">Sync your Zotero collections (projects) with the extension.</p>
+        <h2>Zotero Library Sync</h2>
+        <p class="section-description">Sync your <a href="https://zotero.com/">Zotero</a> (researcher and citation
+          platform) collections (projects) with
+          the extension.</p>
         <div class="form-actions">
-          <button type="button" id="syncProjectsBtn">Sync Projects</button>
+          <button type="button" id="syncProjectsBtn">Sync Zotero Projects</button>
+          </div>
+          <div id="syncStatus" class="sync-status"></div>
+          </section>
+          
+          <section class="syncAtlos-section">
+            <h2>Atlos Library Sync</h2>
+            <p class="section-description">Sync your <a href="https://atlos.org/">Atlos</a> (investigative journalism
+              platform) projects with the extension.
+            </p>
+            <div class="form-actions">
+              <button type="button" id="syncProjectsAtlosBtn">Sync Atlos Projects</button>
         </div>
         <div id="syncStatus" class="sync-status"></div>
       </section>
-      
+
       <section class="settings-section">
         <h2>Display Settings</h2>
-      
+
         <div class="toggle-group">
           <label class="toggle-label">
             <input type="checkbox" id="linkIndicatorsEnabled" checked>
@@ -38,7 +51,7 @@
             </span>
           </label>
         </div>
-      
+
         <div class="toggle-group">
           <label class="toggle-label">
             <input type="checkbox" id="readingProgressEnabled" checked>
@@ -48,7 +61,7 @@
             </span>
           </label>
         </div>
-      
+
         <div class="toggle-group">
           <label class="toggle-label">
             <input type="checkbox" id="autoSaveEnabled" checked>
@@ -110,7 +123,37 @@
           </div>
         </form>
       </section>
-
+      <section class="authAtlos-section">
+        <h2>Atlos Authentication</h2>
+      
+        <div class="statusAtlos" id="statusAtlos"></div>
+        
+        <form id="authAtlosForm">
+        
+          <div class="form-group">
+            <label for="apiKeyAtlos">API Key:</label>
+            <input type="text" id="apiKeyAtlos" name="apiKeyAtlos" placeholder="Enter your Atlos API key">
+            <small>
+              <ol>
+                <li>Navigate to <a href="https://platform.atlos.org/projects" target="_blank">the project</a> for which you need
+                  an API token.
+                </li>
+                <li>Navigate to the Access page of the project.</li>
+                <li>Press the Create button in the API Tokens section of the page.</li>
+                <li>Assign the token a name, write a description of what the token is used for, and select <em>all three
+                    permissions: Read, Comment, and Edit</em> for the token.</li>
+                <li>Click the Create Token button.</li>
+                <li>Paste token above.</li>
+              </ol>
+            </small>
+          </div>
+        
+          <div class="form-actions">
+            <button type="submit" id="saveBtn">Save Credentials</button>
+            <button type="button" id="clearBtn">Clear Credentials</button>
+          </div>
+        </form>
+        </section>
 
     </main>
   </div>

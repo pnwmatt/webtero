@@ -1,6 +1,7 @@
 import type {
   StorageData,
   AuthData,
+  AuthDataAtlos,
   SavedPage,
   Annotation,
   Project,
@@ -43,6 +44,19 @@ class Storage {
 
   async clearAuth(): Promise<void> {
     await browser.storage.local.remove('auth');
+  }
+
+  // Atlos Auth operations
+  async getAuthAtlos(): Promise<AuthDataAtlos | undefined> {
+    return this.get('authAtlos');
+  }
+
+  async setAuthAtlos(auth: AuthDataAtlos): Promise<void> {
+    await this.set('authAtlos', auth);
+  }
+
+  async clearAuthAtlos(): Promise<void> {
+    await browser.storage.local.remove('authAtlos');
   }
 
   // Page operations
@@ -133,6 +147,34 @@ class Storage {
     }
   }
 
+  // Atlos Project operations
+  async getProjectAtlos(id: string): Promise<Project | undefined> {
+    const projects = await this.get('projectsAtlos');
+    return projects?.[id];
+  }
+
+  async getAllProjectsAtlos(): Promise<Record<string, Project>> {
+    return (await this.get('projectsAtlos')) ?? {};
+  }
+
+  async saveProjectAtlos(project: Project): Promise<void> {
+    const projects = (await this.get('projectsAtlos')) ?? {};
+    projects[project.id] = project;
+    await this.set('projectsAtlos', projects);
+  }
+
+  async saveProjectsAtlos(projectsData: Record<string, Project>): Promise<void> {
+    await this.set('projectsAtlos', projectsData);
+  }
+
+  async deleteProjectAtlos(id: string): Promise<void> {
+    const projects = await this.get('projectsAtlos');
+    if (projects && projects[id]) {
+      delete projects[id];
+      await this.set('projectsAtlos', projects);
+    }
+  }
+
   // Sync operations
   async getLastSync(): Promise<string | undefined> {
     return this.get('lastSync');
@@ -140,6 +182,14 @@ class Storage {
 
   async setLastSync(timestamp: string): Promise<void> {
     await this.set('lastSync', timestamp);
+  }
+
+  async getLastSyncAtlos(): Promise<string | undefined> {
+    return this.get('lastSyncAtlos');
+  }
+
+  async setLastSyncAtlos(timestamp: string): Promise<void> {
+    await this.set('lastSyncAtlos', timestamp);
   }
 
   // Page Focus Session operations

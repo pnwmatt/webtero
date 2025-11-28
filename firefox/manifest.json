@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Webtero",
-  "version": "0.1.2",
-  "description": "Transform web research from scattered bookmarks into structured knowledge projects - now in Firefox!",
+  "name": "Webtero for Zotero and Atlos",
+  "version": "0.1.3",
+  "description": "Grease your web research workflow with in-line annotations and item creation.",
   "permissions": [
     "storage",
     "activeTab",
@@ -12,7 +12,8 @@
   ],
   "host_permissions": [
     "https://api.zotero.org/*",
-    "https://www.zotero.org/*"
+    "https://www.zotero.org/*",
+    "https://platform.atlos.org/api/v2/*"
   ],
   "background": {
     "scripts": [

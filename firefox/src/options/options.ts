@@ -14,6 +14,12 @@ const autoSaveCheckbox = document.getElementById('autoSaveEnabled') as HTMLInput
 const oauthSignInBtn = document.getElementById('oauthSignInBtn') as HTMLButtonElement;
 const oauthError = document.getElementById('oauthError') as HTMLParagraphElement;
 
+// Atlos elements
+const formAtlos = document.getElementById('authAtlosForm') as HTMLFormElement;
+const apiKeyAtlosInput = document.getElementById('apiKeyAtlos') as HTMLInputElement;
+const statusAtlosDiv = document.getElementById('statusAtlos') as HTMLDivElement;
+const syncProjectsAtlosBtn = document.getElementById('syncProjectsAtlosBtn') as HTMLButtonElement;
+
 // Load existing credentials
 async function loadCredentials() {
   const auth = await storage.getAuth();
@@ -39,6 +45,16 @@ function showStatus(message: string, isError: boolean = false) {
 
   setTimeout(() => {
     statusDiv.className = 'status';
+  }, 3000);
+}
+
+// Show Atlos status message
+function showStatusAtlos(message: string, isError: boolean = false) {
+  statusAtlosDiv.textContent = message;
+  statusAtlosDiv.className = `status ${isError ? 'error' : 'success'}`;
+
+  setTimeout(() => {
+    statusAtlosDiv.className = 'status';
   }, 3000);
 }
 
@@ -71,6 +87,26 @@ form.addEventListener('submit', async (e) => {
     showStatus('Credentials saved successfully!');
   } catch (error) {
     showStatus('Failed to save credentials', true);
+    console.error(error);
+  }
+});
+
+// Save Atlos credentials
+formAtlos.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const apiKeyAtlos = apiKeyAtlosInput.value.trim();
+
+  if (!apiKeyAtlos) {
+    showStatusAtlos('Please enter an API key', true);
+    return;
+  }
+
+  try {
+    await storage.setAuthAtlos({ apiKeyAtlos });
+    showStatusAtlos('Credentials saved successfully!');
+  } catch (error) {
+    showStatusAtlos('Failed to save credentials', true);
     console.error(error);
   }
 });
@@ -112,6 +148,30 @@ syncProjectsBtn.addEventListener('click', async () => {
     showSyncStatus('Failed to sync projects', 'error');
   } finally {
     syncProjectsBtn.disabled = false;
+  }
+});
+
+// Sync Atlos projects
+syncProjectsAtlosBtn.addEventListener('click', async () => {
+  syncProjectsAtlosBtn.disabled = true;
+  showSyncStatus('Syncing Atlos projects...', 'loading');
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'SYNC_PROJECTS_ATLOS',
+    });
+
+    if (response.success) {
+      const count = response.data ? Object.keys(response.data).length : 0;
+      showSyncStatus(`Synced ${count} Atlos project${count === 1 ? '' : 's'} successfully!`, 'success');
+    } else {
+      showSyncStatus(`Sync failed: ${response.error || 'Unknown error'}`, 'error');
+    }
+  } catch (error) {
+    console.error('Failed to sync Atlos projects:', error);
+    showSyncStatus('Failed to sync Atlos projects', 'error');
+  } finally {
+    syncProjectsAtlosBtn.disabled = false;
   }
 });
 

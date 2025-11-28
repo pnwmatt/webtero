@@ -57,6 +57,10 @@ export interface AuthData {
   username?: string;
 }
 
+export interface AuthDataAtlos {
+  apiKeyAtlos: string;
+}
+
 /**
  * Tracks a reading session for a saved page
  * Records scroll position over time to calculate read percentage
@@ -143,10 +147,13 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export interface StorageData {
   auth?: AuthData;
+  authAtlos?: AuthDataAtlos;
   pages: Record<string, SavedPage>;
   annotations: Record<string, Annotation>;
   projects: Record<string, Project>;
+  projectsAtlos: Record<string, Project>;
   lastSync?: string;
+  lastSyncAtlos?: string;
   // Page focus tracking (keyed by session ID)
   pageFocusSessions: Record<string, PageFocusSession>;
   // Links between saved pages (keyed by link ID)
@@ -262,6 +269,7 @@ export type MessageType =
   | 'UPDATE_ANNOTATION'
   | 'GET_ANNOTATIONS'
   | 'SYNC_PROJECTS'
+  | 'SYNC_PROJECTS_ATLOS'
   | 'HIGHLIGHT_TEXT'
   | 'GET_ALL_SNAPSHOT_ANNOTATIONS'
   | 'INJECT_SINGLEFILE'
