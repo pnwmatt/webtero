@@ -13,13 +13,6 @@ const syncStatus = document.getElementById('syncStatus') as HTMLDivElement;
 const oauthSignInBtn = document.getElementById('oauthSignInBtn') as HTMLButtonElement;
 const oauthError = document.getElementById('oauthError') as HTMLParagraphElement;
 
-// Settings elements
-const sidebarProjectSelectHeight = document.getElementById('sidebarProjectSelectHeight') as HTMLInputElement;
-const linkIndicatorsCheckbox = document.getElementById('linkIndicatorsEnabled') as HTMLInputElement;
-const readingProgressCheckbox = document.getElementById('readingProgressEnabled') as HTMLInputElement;
-const autoSaveCheckbox = document.getElementById('autoSaveEnabled') as HTMLInputElement;
-const settingsStatus = document.getElementById('settingsStatus') as HTMLDivElement;
-
 // Atlos elements
 const formAtlos = document.getElementById('authAtlosForm') as HTMLFormElement;
 const atlasProjectNameInput = document.getElementById('atlasProjectName') as HTMLInputElement;
@@ -29,6 +22,13 @@ const atlosSyncSection = document.getElementById('atlosSyncSection') as HTMLDivE
 const statusAtlosDiv = document.getElementById('statusAtlos') as HTMLDivElement;
 const syncStatusAtlos = document.getElementById('syncStatusAtlos') as HTMLDivElement;
 const syncProjectsAtlosBtn = document.getElementById('syncProjectsAtlosBtn') as HTMLButtonElement;
+
+// Settings elements
+const sidebarProjectSelectHeight = document.getElementById('sidebarProjectSelectHeight') as HTMLInputElement;
+const linkIndicatorsCheckbox = document.getElementById('linkIndicatorsEnabled') as HTMLInputElement;
+const readingProgressCheckbox = document.getElementById('readingProgressEnabled') as HTMLInputElement;
+const autoSaveCheckbox = document.getElementById('autoSaveEnabled') as HTMLInputElement;
+const settingsStatus = document.getElementById('settingsStatus') as HTMLDivElement;
 
 // Load existing credentials
 async function loadCredentials() {

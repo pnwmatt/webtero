@@ -45,7 +45,7 @@ browser.runtime.onMessage.addListener(
 
         case 'SAVE_PAGE':
           return await handleSavePage(
-            message.data as { url: string; title: string; projects?: string[] }
+            message.data as { url: string; title: string; }
           );
 
         case 'GET_ANNOTATIONS':
@@ -272,12 +272,11 @@ async function handleGetPageData(data: {
 async function handleSavePage(data: {
   url: string;
   title: string;
-  projects?: string[];
   tabId?: number; // Optional: specific tab to capture from (for auto-save)
   html?: string; // Optional: pre-captured HTML (for auto-save from content script)
 }): Promise<MessageResponse> {
   const normalizedUrl = normalizeUrl(data.url);
-  const projects = data.projects;
+  const projects = selectedProjects;
   const existingPages = await storage.getPagesForAURL(normalizedUrl);
 
   const confirmedCollections = [];
@@ -287,7 +286,12 @@ async function handleSavePage(data: {
   const zoteroWebpageItems = [];
   const atlosSourceMaterial = [];
 
+  let atlosDescription = '';
+  let atlosSensitivity = ['Not Sensitive'];
+
   // for each projects
+
+  console.log('[wt bg] Received SAVE_PAGE for', normalizedUrl, 'with projects:', projects, 'existingPages:', existingPages);
 
   for (const pName of projects ?? []) {
     const project = await storage.getProject(pName);
@@ -347,14 +351,19 @@ async function handleSavePage(data: {
       zoteroWebpageItems.push(item);
     }
     else if (project.backend === 'atlos') {
-      const source = await atlosAPI.createWebpageItem(
-        normalizedUrl, "", project);
 
+      if (atlosDescription == '') {
+        atlosDescription = prompt('Atlos requires a description for the new source material:') || "";
+      }
+
+      const source = await atlosAPI.createWebpageItem(
+        normalizedUrl, data.title, atlosDescription, project);
       // sleep for 100 ms
       await new Promise(resolve => setTimeout(resolve, 100));
-      atlosSourceMaterial.push({ projectID: project.id, incidentSlug: source.slug });
-    }
+      atlosSourceMaterial.push({ projectID: project.id, projectName: project.name, sourceID: source.id });
 
+      await handleSyncAtlosProjects();
+    }
 
     const zoteroAttachmentKeys = [];
     const atlosSourceMaterialIncidentSlugs = [];
@@ -438,9 +447,15 @@ async function handleSavePage(data: {
         }
         // Atlos:
         for (const source of atlosSourceMaterial) {
+          const auth = await storage.getAuthAtlosByProject(source.projectName);
+          if (!auth) {
+            throw new Error(`No API key found for project: ${project.name}`);
+          }
+          const apiKey = auth.apiKey;
           // Upload the HTML content
           await atlosAPI.createSourceMaterialArtifact(
-            source.incidentSlug,
+            apiKey,
+            source.sourceID,
             htmlData,
             filename,
             data.title
@@ -677,7 +692,7 @@ async function handleSyncAtlosProjects(): Promise<MessageResponse> {
 
   // 3) Create parent project for each API key
   for (const auth of apiKeys) {
-    const parentId = `webteroatlos:${auth.projectName}`;
+    const parentId = `${auth.projectName}`;
 
     // Create parent project
     projects[parentId] = {
@@ -1225,7 +1240,6 @@ async function handleExecuteAutoSave(
     saveResult = await handleSavePage({
       url: normalizedUrl,
       title: data.title,
-      projects: selectedProjects,
       tabId: tabId,
       html: data.html, // Pass pre-captured HTML from content script
     });
@@ -1554,7 +1568,6 @@ async function startPageSaveAndProcessAnnotations(
     const saveResult = await handleSavePage({
       url: normalizedUrl,
       title: pageTitle,
-      projects: selectedProjects,
     });
 
     if (!saveResult.success) {

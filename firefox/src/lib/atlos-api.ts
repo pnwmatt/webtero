@@ -9,11 +9,10 @@ const API_VERSION = '3';
  * Atlos Web API client
  */
 class AtlosAPI {
-  private async getHeaders(): Promise<HeadersInit> {
-    const auth = await storage.getAuthAtlos();
+  private async getHeaders(apiKey: string): Promise<HeadersInit> {
     return {
       'Content-Type': 'application/json',
-      ...(auth?.apiKeyAtlos && { 'Authorization': "Bearer " + auth.apiKeyAtlos }),
+      'Authorization': "Bearer " + apiKey,
     };
   }
 
@@ -63,7 +62,7 @@ class AtlosAPI {
         backend: 'atlos' as const,
         id: incident.slug,
         name: incident.attr_description,
-        parentId: `webteroatlos:${projectName}`,
+        parentId: `${projectName}`,
         dateModified: incident.updated_at,
         itemCount: incident.source_material?.length ?? 0,
         version: 0, // Atlos doesn't use versioning
@@ -77,27 +76,39 @@ class AtlosAPI {
   async createWebpageItem(
     url: string,
     title: string,
+    description: string,
     project: WebteroProject
   ): Promise<any> {
 
     let slug = project.id;
+    console.log("[wt bg] atlos: createWebpageItem for project:", project);
+
+    const auth = await storage.getAuthAtlosByProject(project.name);
+    if (!auth) {
+      throw new Error(`No API key found for project: ${project.name}`);
+    }
+    const apiKey = auth.apiKey;
 
     if (project.parentId === undefined) {
-    // Check if collection starts with "webteroatlos:"
       // Create a new incident
       const result = await this.createAtlosIncident(
+        apiKey,
         project.id,
         title,
         ['Not Sensitive'],
-        url
       );
-
-      slug = result.slug;
+      console.log("[wt bg] atlos: Created new incident for webpage item:", result);
+      slug = result.result.slug;
+    } else {
+      console.log('[wt bg] atlos: Using existing incident slug for webpage item:', slug);
     }
+
+    console.log("[wt bg] atlos: Creating source material for incident slug:", slug);
     // Create source material for existing incident
     const result = await this.createAtlosSourceMaterial(
-      slug, //slug
-      title,
+      apiKey,
+      slug, // incident slug
+      description,
       url
     );
 
@@ -113,21 +124,18 @@ class AtlosAPI {
     sensitive, a string array of the incident's sensitivity. That should be either ["Not Sensitive"], or any combination of the values ["Graphic Violence", "Deceptive or Misleading", "Personal Information Visible"].
     */
   async createAtlosIncident(
+    apiKey: string,
     webteroProjectName: string,
     description: string,
     sensitive: string[],
-    url: string
   ): Promise<any> {
-    const auth = await storage.getAuthAtlosByProject(webteroProjectName);
-    if (!auth) {
-      throw new Error(`No API key found for project: ${webteroProjectName}`);
-    }
+
 
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${auth.apiKey}`,
+      'Authorization': `Bearer ${apiKey}`,
     };
-
+    console.log("[wt bg] atlos: createAtlosIncident for project:", webteroProjectName);
     // Create the incident
     const response = await fetch(`${API_BASE}incidents/new`, {
       method: 'POST',
@@ -143,10 +151,12 @@ class AtlosAPI {
     }
 
     const incident = await response.json();
+    console.log("[wt bg] atlos: Created incident:", incident);
 
     // Get the first source_material ID and call createSourceMaterialArtifact with that id
     if (incident.source_material && incident.source_material.length > 0) {
       const sourceMaterialId = incident.source_material[0].id;
+      console.log("[wt bg] atlos: Created incident with source material ID:", sourceMaterialId);
       // Note: createSourceMaterialArtifact would need singlePageData parameter
       // This is a placeholder - actual implementation depends on how singlePageData is obtained
       // await this.createSourceMaterialArtifact(sourceMaterialId, singlePageData);
@@ -159,35 +169,15 @@ class AtlosAPI {
   The API accepts the param
   */
   async createAtlosSourceMaterial(
+    apiKey: string,
     atlosSlug: string,
     description: string,
     url: string
   ): Promise<any> {
-    // Extract project name from the slug to get the correct API key
-    // This assumes we can determine the project from the slug stored in storage
-    const allProjects = await storage.getAllProjects();
-    let projectName: string | undefined;
-
-    for (const [_id, project] of Object.entries(allProjects)) {
-      if (project.id === atlosSlug && project.backend === 'atlos') {
-        // Extract project name from parentId (format: "webteroatlos:projectName")
-        projectName = project.parentId?.replace('webteroatlos:', '');
-        break;
-      }
-    }
-
-    if (!projectName) {
-      throw new Error(`Could not find project for incident slug: ${atlosSlug}`);
-    }
-
-    const auth = await storage.getAuthAtlosByProject(projectName);
-    if (!auth) {
-      throw new Error(`No API key found for project: ${projectName}`);
-    }
 
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${auth.apiKey}`,
+      'Authorization': `Bearer ${apiKey}`,
     };
 
     const response = await fetch(`${API_BASE}source_material/new/${atlosSlug}`, {
@@ -204,7 +194,13 @@ class AtlosAPI {
     }
 
     const sourceMaterial = await response.json();
-    return sourceMaterial;
+    if (sourceMaterial.success) {
+      console.log("[wt bg] atlos: Created source material:", sourceMaterial);
+      return sourceMaterial.result;
+    } else {
+      console.error("[wt bg] atlos: Failed to create source material:", sourceMaterial);
+    }
+
   }
 
   /* Artifacts always belong to a piece of source material.
@@ -215,12 +211,13 @@ class AtlosAPI {
     */
 
   async createSourceMaterialArtifact(
+    apiKey: string,
     sourceMaterialId: string,
     singlePageData: Uint8Array<ArrayBuffer>,
     filename: string,
     title?: string
   ): Promise<boolean> {
-    const headers = await this.getHeaders();
+    const headers = await this.getHeaders(apiKey);
     delete (headers as any)['Content-Type']; // Remove Content-Type as it will be set by browser for multipart/form-data
 
     const formData = new FormData();
@@ -263,13 +260,13 @@ class AtlosAPI {
 
     for (const [_id, project] of Object.entries(allProjects)) {
       if (project.id === incidentSlug && project.backend === 'atlos') {
-        projectName = project.parentId?.replace('webteroatlos:', '');
+        projectName = project.parentId;
         break;
       }
     }
 
     if (!projectName) {
-      throw new Error(`Could not find project for incident slug: ${incidentSlug}`);
+      throw new Error(`Could not find project for incident slug in createAnnotation: ${incidentSlug}`);
     }
 
     const auth = await storage.getAuthAtlosByProject(projectName);
@@ -319,13 +316,13 @@ class AtlosAPI {
 
     for (const [_id, project] of Object.entries(allProjects)) {
       if (project.id === slug && project.backend === 'atlos') {
-        projectName = project.parentId?.replace('webteroatlos:', '');
+        projectName = project.parentId;
         break;
       }
     }
 
     if (!projectName) {
-      throw new Error(`Could not find project for incident slug: ${slug}`);
+      throw new Error(`Could not find project for incident slug in getComments: ${slug}`);
     }
 
     const auth = await storage.getAuthAtlosByProject(projectName);
