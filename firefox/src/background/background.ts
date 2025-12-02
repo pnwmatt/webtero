@@ -559,7 +559,7 @@ async function handleSyncProjects(): Promise<MessageResponse> {
   await storage.saveProjects(projects);
   await storage.setLastSync(new Date().toISOString());
 
-  browser.runtime.sendMessage({ type: 'PROJECTS_UPDATED', data: projects }).catch(() => {
+  browser.runtime.sendMessage({ type: 'PROJECTS_UPDATED', data: projects });
 
   return {
     success: true,
