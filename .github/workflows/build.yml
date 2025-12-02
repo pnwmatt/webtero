@@ -32,6 +32,30 @@ jobs:
         working-directory: firefox
         run: pnpm install --frozen-lockfile
 
+      - name: Verify version consistency
+        working-directory: firefox
+        run: |
+          MANIFEST_VERSION=$(grep '"version":' manifest.json | sed 's/.*"version": "\(.*\)".*/\1/')
+          PACKAGE_VERSION=$(grep '"version":' package.json | sed 's/.*"version": "\(.*\)".*/\1/')
+          echo "Manifest version: $MANIFEST_VERSION"
+          echo "Package version: $PACKAGE_VERSION"
+          if [ "$MANIFEST_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Error: Version mismatch between manifest.json ($MANIFEST_VERSION) and package.json ($PACKAGE_VERSION)"
+            exit 1
+          fi
+          echo "Version check passed: $MANIFEST_VERSION"
+          
+          # For PRs targeting main, check if tag already exists
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.base_ref }}" = "main" ]; then
+            cd ..
+            git fetch --tags
+            if git tag | grep -q "^v$MANIFEST_VERSION$"; then
+              echo "Error: Tag v$MANIFEST_VERSION already exists. You must increment the version in manifest.json and package.json."
+              exit 1
+            fi
+            echo "Tag check passed: v$MANIFEST_VERSION does not exist yet"
+          fi
+
       - name: Install web-ext
         working-directory: firefox
         run: pnpm install web-ext
