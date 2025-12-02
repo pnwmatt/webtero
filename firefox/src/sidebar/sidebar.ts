@@ -1967,6 +1967,7 @@ async function handleSignIn(): Promise<void> {
 
     // Success - reload to show main sidebar
     await checkAuthAndInitialize();
+    await browser.runtime.sendMessage({ type: 'SYNC_PROJECTS' });
   } catch (error) {
     console.error('OAuth sign-in failed:', error);
     signInError.textContent = error instanceof Error ? error.message : 'Sign-in failed. Please try again.';
