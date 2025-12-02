@@ -108,6 +108,10 @@ button[type="button"]:hover {
   background: #e0e0e0;
 }
 
+.hidden {
+  display: none;
+}
+
 .status {
   padding: 1rem;
   margin-bottom: 1rem;

@@ -1,6 +1,5 @@
 import { storage } from '../lib/storage';
 
-const form = document.getElementById('authForm') as HTMLFormElement;
 const usernameInput = document.getElementById('username') as HTMLInputElement;
 const apiKeyInput = document.getElementById('apiKey') as HTMLInputElement;
 const userIDInput = document.getElementById('userID') as HTMLInputElement;
@@ -14,14 +13,28 @@ const autoSaveCheckbox = document.getElementById('autoSaveEnabled') as HTMLInput
 const oauthSignInBtn = document.getElementById('oauthSignInBtn') as HTMLButtonElement;
 const oauthError = document.getElementById('oauthError') as HTMLParagraphElement;
 
+const zoteroOAuthSection = document.querySelector('.zotero-auth-section > .oauth-section') as HTMLDivElement;
+const zoteroAuthForm = document.querySelector('.zotero-auth-section > .authForm') as HTMLFormElement;
+
 // Load existing credentials
 async function loadCredentials() {
   const auth = await storage.getAuth();
   if (auth) {
+    zoteroAuthForm.classList.remove('hidden');
+    zoteroOAuthSection.classList.add('hidden');
+
     usernameInput.value = auth.username || '';
-    apiKeyInput.value = auth.apiKey;
+    apiKeyInput.value = maskKey(auth.apiKey);
     userIDInput.value = auth.userID;
+  } else {
+    zoteroAuthForm.classList.add('hidden');
+    zoteroOAuthSection.classList.remove('hidden');
   }
+}
+
+function maskKey(key: string): string {
+  const maskLength = key.length - 4;
+  return key.substring(0, 4) + '*'.repeat(maskLength);
 }
 
 // Load existing settings
@@ -55,7 +68,7 @@ function showSyncStatus(message: string, type: 'success' | 'error' | 'loading') 
 }
 
 // Save credentials
-form.addEventListener('submit', async (e) => {
+zoteroAuthForm.addEventListener('submit', async (e) => {
   e.preventDefault();
 
   const apiKey = apiKeyInput.value.trim();
@@ -84,6 +97,7 @@ clearBtn.addEventListener('click', async () => {
       apiKeyInput.value = '';
       userIDInput.value = '';
       showStatus('Credentials cleared');
+      loadCredentials();
     } catch (error) {
       showStatus('Failed to clear credentials', true);
       console.error(error);
@@ -161,7 +175,6 @@ oauthSignInBtn.addEventListener('click', async () => {
 
     // Success - reload credentials
     showStatus('Signed in successfully!');
-    await loadCredentials();
   } catch (error) {
     console.error('OAuth sign-in failed:', error);
     oauthError.textContent = error instanceof Error ? error.message : 'Sign-in failed. Please try again.';
@@ -169,6 +182,7 @@ oauthSignInBtn.addEventListener('click', async () => {
   } finally {
     oauthSignInBtn.disabled = false;
     oauthSignInBtn.textContent = 'Sign in with Zotero';
+    await loadCredentials();
   }
 });
 
