@@ -65,26 +65,22 @@
         <div class="status" id="status"></div>
 
         <!-- OAuth sign-in button -->
-        <div class="oauth-section">
+        <div class="oauth-section hidden">
           <button type="button" id="oauthSignInBtn" class="oauth-btn">Sign in with Zotero</button>
           <p id="oauthError" class="oauth-error"></p>
-        </div>
-
-        <div class="auth-divider">
-          <span>or enter credentials manually</span>
         </div>
 
         <form id="authForm">
           <div class="form-group">
             <label for="username">Username:</label>
             <input type="text" id="username" name="username" placeholder="Zotero username" readonly>
-            <small>Your Zotero username (set automatically via OAuth)</small>
+            <small class="hidden">Your Zotero username (set automatically via OAuth)</small>
           </div>
 
           <div class="form-group">
             <label for="userID">User ID:</label>
-            <input type="text" id="userID" name="userID" placeholder="Enter your Zotero user ID">
-            <small>
+            <input type="text" id="userID" name="userID" placeholder="Enter your Zotero user ID" readonly>
+            <small class="hidden">
               Find your user ID at
               <a href="https://www.zotero.org/settings/keys" target="_blank">
                 zotero.org/settings/keys
@@ -95,8 +91,8 @@
 
           <div class="form-group">
             <label for="apiKey">API Key:</label>
-            <input type="text" id="apiKey" name="apiKey" placeholder="Enter your Zotero API key">
-            <small>
+            <input type="text" id="apiKey" name="apiKey" placeholder="Enter your Zotero API key" readonly>
+            <small class="hidden">
               Get your API key from
               <a href="https://www.zotero.org/settings/keys" target="_blank">
                 zotero.org/settings/keys
@@ -105,7 +101,6 @@
           </div>
 
           <div class="form-actions">
-            <button type="submit" id="saveBtn">Save Credentials</button>
             <button type="button" id="clearBtn">Clear Credentials</button>
           </div>
         </form>
