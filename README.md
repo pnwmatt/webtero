@@ -1,14 +1,6 @@
 # Webtero
 
-> [!WARNING]
-> At this moment Mozilla is still reviewing the [app store listing for Webtero](https://addons.mozilla.org/en-US/firefox/addon/webtero/), meaning it isn't available or able to be distributed easily yet. If you'd like to try it out before its approved:
-> 
-> 1. Download `webtero-0.1.*.zip` from [Releases](https://github.com/pnwmatt/webtero/releases)
-> 2. Unzip it
-> 3. Go to Firefox Debug Extensions (Copy/paste this url: `about:debugging#/runtime/this-firefox`) and "Load a Temporary Add-on...". Find the directory where you unzipped webtero and choose the manifest.json to load.
-> 4. The sidebar should open and you can now authenticate into Webtero securely using OAuth.
-
-A Firefox extension that integrates web browsing with Zotero, enabling you to save pages, create annotations, and capture snapshots directly to your Zotero library.
+A Firefox extension that integrates web browsing with Zotero, enabling you to save pages, create annotations, and capture snapshots directly to your Zotero library.  Download now via the [Mozilla Add-ons](https://addons.mozilla.org/en-US/firefox/addon/webtero/) marketplace for free.
 
 ![webtero](https://github.com/user-attachments/assets/02b35134-2ce9-44b2-a441-20a4b997d82c)
 
@@ -57,6 +49,13 @@ In the Webtero Sidebar, the gear icon allows you to:
 - Disable read progress tracking
 
 # Contributions are Welcome
+
+## Install from Github
+
+1. Download `webtero-0.1.*.zip` from [Releases](https://github.com/pnwmatt/webtero/releases)
+2. Unzip it
+3. Go to Firefox Debug Extensions (Copy/paste this url: `about:debugging#/runtime/this-firefox`) and "Load a Temporary Add-on...". Find the directory where you unzipped webtero and choose the manifest.json to load.
+4. The sidebar should open and you can now authenticate into Webtero securely using OAuth.
 
 ## Building
 
