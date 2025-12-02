@@ -61,6 +61,7 @@ let autoSaveCountdownTimer: ReturnType<typeof setTimeout> | null = null;
 let autoSaveCountdownInterval: ReturnType<typeof setInterval> | null = null;
 let autoSaveCountdownSeconds: number = 0;
 
+
 /**
  * Send a message to the content script with retry logic.
  * Useful when the content script may not be loaded yet.
@@ -176,6 +177,11 @@ async function loadPageData() {
     setPageStatusError('No active tab');
     return;
   }
+
+  // Currently doing this twice: once before restricted page check and once post GET_PAGE_DATA
+  // Doing it here because we want the projects to update post-sync and the user might want
+  // to see that.
+  await displayPageStatus();
 
   // Check if on restricted page
   if (isRestrictedUrl(currentTab.url)) {
@@ -1457,16 +1463,9 @@ syncProjects.addEventListener('click', async () => {
   syncProjects.textContent = '\u21BB';
 
   try {
-    const response = await browser.runtime.sendMessage({
+    await browser.runtime.sendMessage({
       type: 'SYNC_PROJECTS',
     });
-
-    if (response.success) {
-      await loadProjects();
-      await loadProjectsForDropdown();
-    } else {
-      alert(`Failed to sync projects: ${response.error}`);
-    }
   } catch (error) {
     console.error('Failed to sync projects:', error);
     alert('Failed to sync projects');
@@ -2030,6 +2029,10 @@ browser.runtime.onMessage.addListener((message) => {
     message.type === 'OUTBOX_ANNOTATION_DELETED'
   ) {
     loadPageData();
+  }
+
+  if (message.type == 'PROJECTS_UPDATED') {
+    displayPageStatus();
   }
 });
 
