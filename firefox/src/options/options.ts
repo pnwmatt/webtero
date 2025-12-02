@@ -19,9 +19,14 @@ async function loadCredentials() {
   const auth = await storage.getAuth();
   if (auth) {
     usernameInput.value = auth.username || '';
-    apiKeyInput.value = auth.apiKey;
+    apiKeyInput.value = maskKey(auth.apiKey);
     userIDInput.value = auth.userID;
   }
+}
+
+function maskKey(key: string): string {
+  const maskLength = key.length - 4;
+  return key.substring(0, 4) + '*'.repeat(maskLength);
 }
 
 // Load existing settings
