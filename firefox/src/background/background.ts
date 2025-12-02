@@ -26,6 +26,13 @@ const AUTO_SAVE_DELAY_MS = 5000;
 if (LOG_LEVEL > 0) console.log('Webtero background script loaded');
 
 /**
+ * Handle toolbar button click - open/toggle sidebar
+ */
+browser.action.onClicked.addListener(() => {
+  browser.sidebarAction.open();
+});
+
+/**
  * Handle messages from sidebar and content scripts
  */
 browser.runtime.onMessage.addListener(

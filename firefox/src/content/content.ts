@@ -1671,7 +1671,7 @@ document.addEventListener('selectionchange', () => {
 function findCSSHighlightAtPoint(x: number, y: number): { id: string; range: Range; color: HighlightColor } | null {
   // Get the position from coordinates
   const caretPos = document.caretPositionFromPoint?.(x, y) ||
-                   (document as { caretRangeFromPoint?: (x: number, y: number) => Range | null }).caretRangeFromPoint?.(x, y);
+    (document as { caretRangeFromPoint?: (x: number, y: number) => Range | null }).caretRangeFromPoint?.(x, y);
 
   if (!caretPos) return null;
 
@@ -2000,7 +2000,7 @@ function applyHistoricalAnnotations(annotations: Annotation[]): { notFoundIds: s
   for (const annotation of annotations) {
     // Skip if already applied - check both CSS registry and DOM
     if (highlightRegistry.has(annotation.id) ||
-        document.querySelector(`.webtero-highlight[data-highlight-id="${annotation.id}"]`)) {
+      document.querySelector(`.webtero-highlight[data-highlight-id="${annotation.id}"]`)) {
       continue;
     }
 
@@ -2468,7 +2468,7 @@ function handleOAuthCallback() {
           // Try to close the window after a short delay
           setTimeout(() => {
             window.close();
-          }, 2000);
+          }, 3000);
         } else {
           console.error('Webtero: OAuth callback failed:', response?.error);
           // Show error message on the page using DOM manipulation

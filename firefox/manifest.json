@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Webtero",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "Transform web research from scattered bookmarks into structured knowledge projects - now in Firefox!",
   "permissions": [
     "storage",
@@ -19,6 +19,10 @@
       "background/background.js"
     ],
     "type": "module"
+  },
+  "action": {
+    "default_title": "Open Webtero Sidebar",
+    "default_icon": "sidebar/icon-w.svg"
   },
   "sidebar_action": {
     "default_panel": "sidebar/sidebar.html",
